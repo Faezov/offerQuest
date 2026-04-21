@@ -6,6 +6,7 @@ OfferQuest turns your CV and cover letter into a reusable job-fit profile so you
 
 - Extracts text from your current CV and cover letter files in `data/`
 - Builds a structured candidate profile with strengths, likely target roles, and search keywords
+- Fetches and normalizes jobs from public/official-friendly sources
 - Scores individual job descriptions against that profile
 - Ranks a folder of job descriptions so you can focus on the strongest opportunities first
 
@@ -47,6 +48,51 @@ python3 -m offerquest rank-jobs \
   --output outputs/job-ranking.json
 ```
 
+Fetch jobs from Adzuna into normalized records:
+
+```bash
+python3 -m offerquest fetch-adzuna \
+  --what "senior data analyst" \
+  --where "Sydney" \
+  --country au \
+  --output outputs/jobs/adzuna-au.jsonl
+```
+
+Fetch public jobs from a Greenhouse board:
+
+```bash
+python3 -m offerquest fetch-greenhouse \
+  --board-token example \
+  --output outputs/jobs/greenhouse-example.jsonl
+```
+
+Turn local job descriptions into normalized records:
+
+```bash
+python3 -m offerquest import-manual-jobs \
+  --input-path jobs \
+  --output outputs/jobs/manual.jsonl
+```
+
+Merge multiple job-record files:
+
+```bash
+python3 -m offerquest merge-jobs \
+  --input outputs/jobs/adzuna-au.jsonl \
+  --input outputs/jobs/greenhouse-example.jsonl \
+  --input outputs/jobs/manual.jsonl \
+  --output outputs/jobs/all.jsonl
+```
+
+Rank normalized job records directly:
+
+```bash
+python3 -m offerquest rank-jobs \
+  --profile outputs/bulat-profile.json \
+  --jobs-file outputs/jobs/all.jsonl \
+  --output outputs/job-ranking.json
+```
+
 You can also skip the saved profile and score directly from the CV and cover letter:
 
 ```bash
@@ -61,16 +107,20 @@ python3 -m offerquest rank-jobs \
 - Plain text: `.txt`, `.md`
 - OpenDocument text files, including misnamed `.doc` files that are actually zipped ODT documents
 - Legacy Microsoft Word `.doc` files through a local `strings` fallback
+- Normalized job-record files: `.json`, `.jsonl`
 
 ## Recommended Workflow
 
 1. Put job descriptions into `jobs/` as `.txt` or `.md` files.
-2. Build or refresh your profile after updating your CV or cover letter.
-3. Run `rank-jobs` and focus your effort on the highest-scoring roles.
-4. Use the reported strengths and gaps to tailor your next cover letter version.
+2. Fetch jobs from Adzuna and any public Greenhouse boards you want to monitor.
+3. Import any manually collected job descriptions.
+4. Merge the job-record files into one dataset.
+5. Build or refresh your profile after updating your CV or cover letter.
+6. Run `rank-jobs` and focus your effort on the highest-scoring roles.
+7. Use the reported strengths and gaps to tailor your next cover letter version.
 
 ## Notes
 
 - The scoring is heuristic, not an ATS emulator.
 - It is designed to surface fit quickly and consistently, not replace judgment.
-
+- `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.

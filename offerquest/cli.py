@@ -4,8 +4,18 @@ import argparse
 import json
 from pathlib import Path
 
+from .jobs import (
+    collect_job_record_inputs,
+    fetch_adzuna_jobs,
+    fetch_greenhouse_jobs,
+    import_manual_jobs,
+    merge_job_record_sets,
+    read_job_records,
+    resolve_adzuna_credentials,
+    write_job_records,
+)
 from .profile import build_profile_from_files
-from .scoring import rank_job_files, score_job_file
+from .scoring import rank_job_files, rank_job_records, score_job_file
 
 SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".odt"}
 
@@ -34,8 +44,51 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rank every supported job description file inside a folder",
     )
     add_profile_reuse_arguments(rank_jobs_parser)
-    rank_jobs_parser.add_argument("--jobs-dir", type=Path, required=True, help="Folder of job files")
+    rank_jobs_group = rank_jobs_parser.add_mutually_exclusive_group(required=True)
+    rank_jobs_group.add_argument("--jobs-dir", type=Path, help="Folder of raw job description files")
+    rank_jobs_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
     rank_jobs_parser.add_argument("--output", type=Path, help="Write ranking JSON to this path")
+
+    adzuna_parser = subparsers.add_parser(
+        "fetch-adzuna",
+        help="Fetch job listings from the Adzuna API into normalized job records",
+    )
+    adzuna_parser.add_argument("--app-id", help="Adzuna app id; falls back to ADZUNA_APP_ID")
+    adzuna_parser.add_argument("--app-key", help="Adzuna app key; falls back to ADZUNA_APP_KEY")
+    adzuna_parser.add_argument("--what", help="Search keywords, e.g. senior data analyst")
+    adzuna_parser.add_argument("--where", help="Search location, e.g. Sydney")
+    adzuna_parser.add_argument("--country", default="au", help="Adzuna country code, default: au")
+    adzuna_parser.add_argument("--page", type=int, default=1, help="Results page number")
+    adzuna_parser.add_argument("--results-per-page", type=int, default=20, help="Results per page")
+    adzuna_parser.add_argument("--output", type=Path, required=True, help="Write normalized jobs to this file")
+
+    greenhouse_parser = subparsers.add_parser(
+        "fetch-greenhouse",
+        help="Fetch public jobs from a Greenhouse board into normalized job records",
+    )
+    greenhouse_parser.add_argument("--board-token", required=True, help="Greenhouse board token")
+    greenhouse_parser.add_argument("--output", type=Path, required=True, help="Write normalized jobs to this file")
+
+    import_manual_parser = subparsers.add_parser(
+        "import-manual-jobs",
+        help="Turn local job description files into normalized job records",
+    )
+    import_manual_parser.add_argument("--input-path", type=Path, required=True, help="File or directory of job descriptions")
+    import_manual_parser.add_argument("--output", type=Path, required=True, help="Write normalized jobs to this file")
+
+    merge_jobs_parser = subparsers.add_parser(
+        "merge-jobs",
+        help="Merge JSON or JSONL job-record files into one deduplicated job dataset",
+    )
+    merge_jobs_parser.add_argument(
+        "--input",
+        action="append",
+        dest="inputs",
+        required=True,
+        type=Path,
+        help="Job-record file or directory; repeat for multiple inputs",
+    )
+    merge_jobs_parser.add_argument("--output", type=Path, required=True, help="Write merged jobs to this file")
 
     return parser
 
@@ -62,6 +115,79 @@ def main() -> int:
         print(json.dumps(profile, indent=2))
         return 0
 
+    if args.command == "fetch-adzuna":
+        app_id, app_key = resolve_adzuna_credentials(args.app_id, args.app_key)
+        if not app_id or not app_key:
+            parser.error("Adzuna credentials are required via --app-id/--app-key or ADZUNA_APP_ID/ADZUNA_APP_KEY")
+
+        jobs = fetch_adzuna_jobs(
+            app_id=app_id,
+            app_key=app_key,
+            what=args.what,
+            where=args.where,
+            country=args.country,
+            page=args.page,
+            results_per_page=args.results_per_page,
+        )
+        write_job_records(args.output, jobs)
+        print(
+            json.dumps(
+                {
+                    "source": "adzuna",
+                    "job_count": len(jobs),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "fetch-greenhouse":
+        jobs = fetch_greenhouse_jobs(args.board_token)
+        write_job_records(args.output, jobs)
+        print(
+            json.dumps(
+                {
+                    "source": "greenhouse",
+                    "board_token": args.board_token,
+                    "job_count": len(jobs),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "import-manual-jobs":
+        jobs = import_manual_jobs(args.input_path)
+        write_job_records(args.output, jobs)
+        print(
+            json.dumps(
+                {
+                    "source": "manual",
+                    "job_count": len(jobs),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "merge-jobs":
+        jobs = collect_job_record_inputs(args.inputs)
+        write_job_records(args.output, jobs)
+        print(
+            json.dumps(
+                {
+                    "source": "merged",
+                    "job_count": len(jobs),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
     profile = load_profile(args, parser)
 
     if args.command == "score-job":
@@ -71,8 +197,12 @@ def main() -> int:
         return 0
 
     if args.command == "rank-jobs":
-        job_paths = collect_job_paths(args.jobs_dir)
-        results = rank_job_files(job_paths, profile)
+        if args.jobs_file:
+            jobs = read_job_records(args.jobs_file)
+            results = rank_job_records(jobs, profile)
+        else:
+            job_paths = collect_job_paths(args.jobs_dir)
+            results = rank_job_files(job_paths, profile)
         payload = {
             "job_count": len(results),
             "rankings": results,
@@ -105,7 +235,7 @@ def collect_job_paths(jobs_dir: Path) -> list[Path]:
     )
 
 
-def write_optional_json(path: Path | None, payload: dict) -> None:
+def write_optional_json(path: Path | None, payload: object) -> None:
     if path is None:
         return
 

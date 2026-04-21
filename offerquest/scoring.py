@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .extractors import read_document_text
+from .jobs import job_record_to_text
 from .profile import DOMAIN_PATTERNS, SKILL_PATTERNS
 
 ROLE_FAMILIES = {
@@ -41,6 +42,29 @@ NON_AUSTRALIA_LOCATION_TERMS = [
 def score_job_file(job_path: str | Path, profile: dict) -> dict:
     job_text = read_document_text(job_path)
     return score_job_text(job_text, profile, source_name=str(job_path))
+
+
+def score_job_record(job_record: dict, profile: dict) -> dict:
+    result = score_job_text(
+        job_record_to_text(job_record),
+        profile,
+        source_name=job_record.get("source") or job_record.get("id"),
+    )
+    result.update(
+        {
+            "job_id": job_record.get("id"),
+            "company": job_record.get("company"),
+            "location": job_record.get("location"),
+            "url": job_record.get("url"),
+            "source": job_record.get("source"),
+            "salary_min": job_record.get("salary_min"),
+            "salary_max": job_record.get("salary_max"),
+            "currency": job_record.get("currency"),
+            "employment_type": job_record.get("employment_type"),
+            "posted_at": job_record.get("posted_at"),
+        }
+    )
+    return result
 
 
 def score_job_text(job_text: str, profile: dict, *, source_name: str | None = None) -> dict:
@@ -108,6 +132,11 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
 
 def rank_job_files(job_paths: list[Path], profile: dict) -> list[dict]:
     ranked = [score_job_file(path, profile) for path in job_paths]
+    return sorted(ranked, key=lambda item: item["score"], reverse=True)
+
+
+def rank_job_records(job_records: list[dict], profile: dict) -> list[dict]:
+    ranked = [score_job_record(record, profile) for record in job_records]
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
 
 

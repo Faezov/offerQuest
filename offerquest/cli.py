@@ -15,6 +15,7 @@ from .cover_letter import (
 )
 from .docx import export_document_as_docx
 from .errors import OfferQuestError
+from .extractors import read_document_text
 from .jobs import (
     collect_job_record_inputs,
     fetch_adzuna_jobs,
@@ -26,7 +27,8 @@ from .jobs import (
     write_job_records,
 )
 from .ollama import DEFAULT_OLLAMA_BASE_URL, get_ollama_status
-from .profile import build_profile_from_files
+from .profile import build_candidate_profile, build_profile_from_files
+from .reranking import rerank_job_files, rerank_job_records
 from .scoring import rank_job_files, rank_job_records, score_job_file
 from .workspace import ProjectState
 
@@ -142,6 +144,23 @@ def build_parser() -> argparse.ArgumentParser:
     rank_jobs_group.add_argument("--jobs-dir", type=Path, help="Folder of raw job description files")
     rank_jobs_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
     rank_jobs_parser.add_argument("--output", type=Path, help="Write ranking JSON to this path")
+
+    rerank_jobs_parser = subparsers.add_parser(
+        "rerank-jobs",
+        help="Run a second-pass rerank over the top jobs using ATS-style signals",
+    )
+    rerank_jobs_parser.add_argument("--cv", type=Path, required=True, help="CV file")
+    rerank_jobs_parser.add_argument("--cover-letter", type=Path, help="Optional cover letter to refine ATS and target-role context")
+    rerank_jobs_parser.add_argument(
+        "--profile",
+        type=Path,
+        help="Optional existing profile JSON; if omitted, OfferQuest builds a fresh profile from the CV and cover letter",
+    )
+    rerank_jobs_group = rerank_jobs_parser.add_mutually_exclusive_group(required=True)
+    rerank_jobs_group.add_argument("--jobs-dir", type=Path, help="Folder of raw job description files")
+    rerank_jobs_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
+    rerank_jobs_parser.add_argument("--top", type=int, default=20, help="How many top jobs to rerank in the second pass, default: 20")
+    rerank_jobs_parser.add_argument("--output", type=Path, help="Write reranked JSON to this path")
 
     adzuna_parser = subparsers.add_parser(
         "fetch-adzuna",
@@ -510,6 +529,66 @@ def main() -> int:
                     indent=2,
                 )
             )
+            return 0
+
+        if args.command == "rerank-jobs":
+            if args.top < 1:
+                parser.error("--top must be at least 1")
+
+            cv_text = read_document_text(args.cv)
+            cover_letter_text = read_document_text(args.cover_letter) if args.cover_letter else ""
+            rerank_profile = (
+                json.loads(args.profile.read_text(encoding="utf-8"))
+                if args.profile
+                else build_candidate_profile(
+                    cv_text,
+                    cover_letter_text,
+                    cv_path=str(args.cv),
+                    cover_letter_path=str(args.cover_letter) if args.cover_letter else None,
+                )
+            )
+
+            if args.jobs_file:
+                jobs = read_job_records(args.jobs_file)
+                results = rerank_job_records(
+                    jobs,
+                    rerank_profile,
+                    cv_text=cv_text,
+                    cv_path=args.cv,
+                    cover_letter_text=cover_letter_text,
+                    top_n=args.top,
+                )
+            else:
+                job_paths = collect_job_paths(args.jobs_dir)
+                results = rerank_job_files(
+                    job_paths,
+                    rerank_profile,
+                    cv_text=cv_text,
+                    cv_path=args.cv,
+                    cover_letter_text=cover_letter_text,
+                    top_n=args.top,
+                )
+
+            payload = {
+                "job_count": len(results),
+                "reranked_count": min(args.top, len(results)),
+                "rerank_strategy": "ats-hybrid-v1",
+                "rankings": results,
+            }
+            write_optional_json(args.output, payload)
+            maybe_record_run(
+                project_state,
+                "rerank-jobs",
+                output_path=args.output,
+                artifact_kind="ranking",
+                metadata={
+                    "job_count": payload["job_count"],
+                    "reranked_count": payload["reranked_count"],
+                    "rerank_strategy": payload["rerank_strategy"],
+                },
+                label=args.output.stem if args.output else None,
+            )
+            print(json.dumps(payload, indent=2))
             return 0
 
         profile = load_profile(args, parser)

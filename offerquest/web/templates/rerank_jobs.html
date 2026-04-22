@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Rerank Top Jobs</h2>
+        <p>Run a second-pass ATS-aware rerank over the latest ranking context using the current CV and optional cover letter.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if not view.has_rankings %}
+        <div class="empty-state">
+          <h3>No ranking data available</h3>
+          <p>Run job ranking first so the workbench has a ranking file to rerank.</p>
+        </div>
+      {% elif not view.has_documents %}
+        <div class="empty-state">
+          <h3>No candidate documents found</h3>
+          <p>Add your CV and optional base cover letter under <code>data/</code> first.</p>
+        </div>
+      {% elif not view.has_jobs_files %}
+        <div class="empty-state">
+          <h3>No jobs files found</h3>
+          <p>Import or fetch jobs into <code>outputs/</code> first so the rerank can resolve full job records.</p>
+        </div>
+      {% else %}
+        <form method="post" class="form-stack">
+          <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
+
+          <div class="callout">
+            <p><strong>Selected ranking:</strong> {{ view.selected_ranking_filename or "Latest ranking" }}</p>
+            <p><strong>Modified:</strong> {{ view.selected_ranking_modified_at or "Unknown" }}</p>
+            <p><strong>Jobs in ranking:</strong> {{ view.selected_ranking_job_count }}</p>
+            {% if view.selected_ranking_strategy %}
+              <p><strong>Current strategy:</strong> {{ view.selected_ranking_strategy }}</p>
+            {% endif %}
+          </div>
+
+          <label class="field">
+            <span>CV file</span>
+            <select name="cv_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Base cover letter file</span>
+            <select name="base_cover_letter_path">
+              <option value="">None</option>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Jobs file</span>
+            <select name="jobs_file" required>
+              {% for item in view.jobs_files %}
+                <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
+                  {{ item.relative_path }} ({{ item.record_count }} records)
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Top jobs to rerank</span>
+            <input type="text" name="top_n" value="{{ view.selected_top_n }}" required>
+          </label>
+
+          <label class="field">
+            <span>Output JSON path</span>
+            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+          </label>
+
+          <button class="primary-button" type="submit">Rerank Top Jobs</button>
+        </form>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>What This Phase Does</h2>
+        <p>The rerank keeps the existing ranking format but adds more ATS-oriented context for the top window.</p>
+      </div>
+      <ol class="step-list">
+        <li>Starts from the current ranking context and chosen jobs file.</li>
+        <li>Builds ATS reports for the top window using the selected CV and optional cover letter.</li>
+        <li>Combines first-pass fit with ATS score and required-keyword coverage.</li>
+        <li>Saves a reranked JSON artifact with movement, score deltas, and short rerank reasons.</li>
+      </ol>
+
+      {% if view.selected_ranking_preview %}
+        <div class="panel__header">
+          <h2>Current Top Slice</h2>
+          <p>The first few jobs from the selected ranking before reranking.</p>
+        </div>
+        <div class="ranking-table">
+          <div class="ranking-table__head">
+            <span>Rank</span>
+            <span>Role</span>
+            <span>Company</span>
+            <span>Location</span>
+            <span>Score</span>
+            <span>Links</span>
+          </div>
+          {% for item in view.selected_ranking_preview %}
+            <div class="ranking-table__row">
+              <span>#{{ item.rank }}</span>
+              <strong>{{ item.job_title }}</strong>
+              <span>{{ item.company }}</span>
+              <span>{{ item.location }}</span>
+              <span class="score-pill">{{ item.score }}</span>
+              <div class="ranking-table__links">
+                {% if item.job_id %}
+                  <code>{{ item.job_id }}</code>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if view.result %}
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Reranked Output Ready</h2>
+        <p>
+          Saved to <code>{{ view.result.output_path_relative }}</code>.
+          <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+        </p>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Reranked Count</dt>
+          <dd>{{ view.result.payload.reranked_count }}</dd>
+        </div>
+        <div>
+          <dt>Total Jobs</dt>
+          <dd>{{ view.result.payload.job_count }}</dd>
+        </div>
+        <div>
+          <dt>Strategy</dt>
+          <dd>{{ view.result.payload.rerank_strategy }}</dd>
+        </div>
+        <div>
+          <dt>Jobs File</dt>
+          <dd><code>{{ view.result.payload.jobs_file }}</code></dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Reranked Jobs</h2>
+        <p>The top of the reranked list now includes score movement and ATS-aware reasons.</p>
+      </div>
+      <div class="ranking-table">
+        <div class="ranking-table__head">
+          <span>Rank</span>
+          <span>Role</span>
+          <span>Company</span>
+          <span>Location</span>
+          <span>Score</span>
+          <span>Links</span>
+        </div>
+        {% for item in view.result.payload.rankings[:12] %}
+          <div class="ranking-table__row">
+            <div>
+              <strong>#{{ item.rerank_rank }}</strong>
+              <p class="ranking-table__meta">Was #{{ item.original_rank }}</p>
+            </div>
+            <div>
+              <strong>{{ item.job_title }}</strong>
+              <p class="ranking-table__meta">
+                {% if item.rank_change > 0 %}
+                  Moved up {{ item.rank_change }}
+                {% elif item.rank_change < 0 %}
+                  Moved down {{ 0 - item.rank_change }}
+                {% else %}
+                  No movement
+                {% endif %}
+              </p>
+            </div>
+            <span>{{ item.company }}</span>
+            <span>{{ item.location }}</span>
+            <div>
+              <span class="score-pill">{{ item.score }}</span>
+              {% if item.ats_score is defined %}
+                <p class="ranking-table__meta">ATS {{ item.ats_score }}</p>
+              {% endif %}
+            </div>
+            <div class="ranking-table__links">
+              {% if item.job_id %}
+                <a href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Tailor CV</a>
+                <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">CV Draft</a>
+                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Generate Draft</a>
+              {% endif %}
+              {% if item.job_id %}
+                <code>{{ item.job_id }}</code>
+              {% endif %}
+            </div>
+          </div>
+          {% if item.rerank_reasons %}
+            <div class="ranking-table__notes">
+              <p><strong>Rerank notes:</strong> {{ item.rerank_reasons | join("; ") }}</p>
+              {% if item.missing_required_keywords %}
+                <p><strong>Missing required keywords:</strong> {{ item.missing_required_keywords | join(", ") }}</p>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

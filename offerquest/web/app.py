@@ -13,6 +13,7 @@ from ..workbench import (
     build_dashboard_view,
     build_latest_rankings_view,
     build_profile_form_view,
+    build_rerank_jobs_form_view,
     build_resume_tailored_draft_form_view,
     build_resume_tailoring_form_view,
     build_run_detail_view,
@@ -20,6 +21,7 @@ from ..workbench import (
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
+    run_rerank_jobs_build,
     run_resume_tailored_draft_build,
     run_resume_tailoring_plan_build,
 )
@@ -101,6 +103,23 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
             {
                 "page_title": "Build Profile",
                 "view": build_profile_form_view(project_state),
+            },
+        )
+
+    @app.get("/rerank-jobs/new", response_class=HTMLResponse)
+    async def build_rerank_jobs_page(
+        request: Request,
+        ranking_file: str | None = None,
+    ) -> HTMLResponse:
+        return render(
+            request,
+            "rerank_jobs.html",
+            {
+                "page_title": "Rerank Jobs",
+                "view": build_rerank_jobs_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                ),
             },
         )
 
@@ -237,6 +256,103 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
                     project_state,
                     cv_path=cv_path,
                     cover_letter_path=cover_letter_path,
+                    output_path=output_path,
+                    result=result,
+                ),
+            },
+        )
+
+    @app.post("/rerank-jobs/new", response_class=HTMLResponse)
+    async def build_rerank_jobs_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        ranking_file = str(form.get("ranking_file") or "").strip() or None
+        cv_path = str(form.get("cv_path") or "").strip()
+        base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
+        jobs_file = str(form.get("jobs_file") or "").strip()
+        top_n_raw = str(form.get("top_n") or "").strip()
+        output_path = str(form.get("output_path") or "").strip()
+
+        try:
+            top_n = int(top_n_raw)
+        except ValueError:
+            return render(
+                request,
+                "rerank_jobs.html",
+                {
+                    "page_title": "Rerank Jobs",
+                    "view": build_rerank_jobs_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        top_n=top_n_raw or None,
+                        output_path=output_path or None,
+                        error="Top count must be a whole number.",
+                    ),
+                },
+            )
+
+        if not cv_path or not jobs_file or not output_path:
+            return render(
+                request,
+                "rerank_jobs.html",
+                {
+                    "page_title": "Rerank Jobs",
+                    "view": build_rerank_jobs_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        top_n=top_n_raw or None,
+                        output_path=output_path or None,
+                        error="CV file, jobs file, rerank count, and output path are all required.",
+                    ),
+                },
+            )
+
+        try:
+            result = run_rerank_jobs_build(
+                project_state,
+                ranking_file=ranking_file,
+                cv_path=cv_path,
+                base_cover_letter_path=base_cover_letter_path,
+                jobs_file=jobs_file,
+                top_n=top_n,
+                output_path=output_path,
+            )
+        except ValueError as exc:
+            return render(
+                request,
+                "rerank_jobs.html",
+                {
+                    "page_title": "Rerank Jobs",
+                    "view": build_rerank_jobs_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        cv_path=cv_path,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file,
+                        top_n=top_n_raw,
+                        output_path=output_path,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "rerank_jobs.html",
+            {
+                "page_title": "Rerank Jobs",
+                "view": build_rerank_jobs_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    cv_path=cv_path,
+                    base_cover_letter_path=base_cover_letter_path,
+                    jobs_file=jobs_file,
+                    top_n=top_n_raw,
                     output_path=output_path,
                     result=result,
                 ),

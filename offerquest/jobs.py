@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 from .extractors import normalize_text, read_document_text
 
-SUPPORTED_MANUAL_JOB_SUFFIXES = {".txt", ".md", ".doc", ".odt"}
+SUPPORTED_MANUAL_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 SUPPORTED_JOB_RECORD_SUFFIXES = {".json", ".jsonl"}
 
 

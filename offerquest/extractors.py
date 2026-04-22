@@ -14,6 +14,10 @@ ODT_NAMESPACES = {
     "text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
 }
 
+DOCX_NAMESPACES = {
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+}
+
 LEGACY_WORD_NOISE = {
     "Root Entry",
     "CompObj",
@@ -73,11 +77,22 @@ def read_document_text(path: str | Path) -> str:
     header = document_path.read_bytes()[:8]
 
     if header.startswith(ZIP_MAGIC):
-        return extract_odt_like_text(document_path)
+        return extract_zip_document_text(document_path)
     if header.startswith(OLE_MAGIC):
         return extract_legacy_word_text(document_path)
 
     return normalize_text(document_path.read_text(encoding="utf-8", errors="ignore"))
+
+
+def extract_zip_document_text(path: Path) -> str:
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+        if "content.xml" in names:
+            return extract_odt_like_text(path)
+        if "word/document.xml" in names:
+            return extract_docx_text(path)
+
+    raise ValueError(f"{path} is a zip document, but its structure is not supported")
 
 
 def extract_odt_like_text(path: Path) -> str:
@@ -98,6 +113,28 @@ def extract_odt_like_text(path: Path) -> str:
 
     blocks: list[str] = []
     for node in office_text.iter():
+        if node.tag not in paragraph_tags:
+            continue
+        text = normalize_inline_whitespace(flatten_xml_text(node))
+        if text:
+            blocks.append(text)
+
+    return "\n".join(blocks)
+
+
+def extract_docx_text(path: Path) -> str:
+    with zipfile.ZipFile(path) as archive:
+        if "word/document.xml" not in archive.namelist():
+            raise ValueError(f"{path} does not contain word/document.xml")
+        content = archive.read("word/document.xml")
+
+    root = ET.fromstring(content)
+    paragraph_tags = {
+        f"{{{DOCX_NAMESPACES['w']}}}p",
+    }
+
+    blocks: list[str] = []
+    for node in root.iter():
         if node.tag not in paragraph_tags:
             continue
         text = normalize_inline_whitespace(flatten_xml_text(node))
@@ -178,6 +215,8 @@ def flatten_xml_text(element: ET.Element) -> str:
     for child in element:
         local_name = child.tag.rsplit("}", 1)[-1]
         if local_name == "line-break":
+            parts.append("\n")
+        elif local_name in {"br", "cr"}:
             parts.append("\n")
         elif local_name == "tab":
             parts.append("\t")

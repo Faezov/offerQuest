@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Compare Draft Styles</h2>
+        <p>Generate both the rule-based and Ollama-backed drafts for the same ranked job, then review them side by side.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if not view.has_rankings %}
+        <div class="empty-state">
+          <h3>No ranking data available</h3>
+          <p>Run job ranking first so the workbench has a selected job to compare against.</p>
+        </div>
+      {% elif not view.selected_job %}
+        <div class="empty-state">
+          <h3>No job selected</h3>
+          <p>Open this page from the rankings view or choose a valid ranked job id.</p>
+        </div>
+      {% elif not view.has_documents %}
+        <div class="empty-state">
+          <h3>No candidate documents found</h3>
+          <p>Add your CV and base cover letter under <code>data/</code> first.</p>
+        </div>
+      {% elif not view.has_jobs_files %}
+        <div class="empty-state">
+          <h3>No jobs files found</h3>
+          <p>Import or fetch jobs into <code>outputs/</code> first so the selected ranking can be resolved back to a full job record.</p>
+        </div>
+      {% else %}
+        <form method="post" class="form-stack">
+          <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
+          <input type="hidden" name="job_id" value="{{ view.selected_job.job_id or '' }}">
+
+          <div class="callout">
+            <p><strong>Selected job:</strong> {{ view.selected_job.job_title }} at {{ view.selected_job.company }}</p>
+            <p><strong>Location:</strong> {{ view.selected_job.location or "Unknown" }}</p>
+            <p><strong>Score:</strong> {{ view.selected_job.score }}</p>
+          </div>
+
+          <label class="field">
+            <span>CV file</span>
+            <select name="cv_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Base cover letter file</span>
+            <select name="base_cover_letter_path">
+              <option value="">None</option>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Jobs file</span>
+            <select name="jobs_file" required>
+              {% for item in view.jobs_files %}
+                <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
+                  {{ item.relative_path }} ({{ item.record_count }} records)
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <div class="compare-output-grid">
+            <label class="field">
+              <span>Rule-based output path</span>
+              <input type="text" name="rule_based_output_path" value="{{ view.selected_rule_based_output }}" required>
+            </label>
+
+            <label class="field">
+              <span>LLM output path</span>
+              <input type="text" name="llm_output_path" value="{{ view.selected_llm_output }}" required>
+            </label>
+          </div>
+
+          <div class="subsection">
+            <h3>LLM Settings</h3>
+            <p class="subsection__summary">These settings control only the Ollama-backed draft in the comparison.</p>
+
+            <label class="field">
+              <span>Model</span>
+              <input type="text" name="llm_model" value="{{ view.selected_llm_model }}">
+            </label>
+
+            <label class="field">
+              <span>Base URL</span>
+              <input type="text" name="llm_base_url" value="{{ view.selected_llm_base_url }}">
+            </label>
+
+            <label class="field">
+              <span>Timeout seconds</span>
+              <input type="text" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}">
+            </label>
+          </div>
+
+          <button class="primary-button" type="submit">Generate Comparison</button>
+        </form>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>How To Read It</h2>
+        <p>This view is meant to help you decide which drafting style deserves manual polish.</p>
+      </div>
+      <ol class="step-list">
+        <li>The rule-based draft gives you the stable ATS-aware baseline.</li>
+        <li>The LLM draft adds tone, employer framing, and more expressive evidence selection.</li>
+        <li>Use the notes and text side by side to decide which parts to keep, merge, or rewrite.</li>
+      </ol>
+    </article>
+  </section>
+
+  {% if view.result %}
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Comparison Ready</h2>
+        <p>
+          Recorded as
+          <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">{{ view.result.run_manifest.label or view.result.run_manifest.id }}</a>.
+        </p>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Role</dt>
+          <dd>{{ view.result.rule_based.payload.job_title }}</dd>
+        </div>
+        <div>
+          <dt>Company</dt>
+          <dd>{{ view.result.rule_based.payload.company }}</dd>
+        </div>
+        <div>
+          <dt>Rule-based file</dt>
+          <dd><code>{{ view.result.rule_based.output_path_relative }}</code></dd>
+        </div>
+        <div>
+          <dt>LLM file</dt>
+          <dd><code>{{ view.result.llm.output_path_relative }}</code></dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="compare-card-grid">
+      <article class="panel compare-card">
+        <div class="panel__header">
+          <h2>Rule-Based Draft</h2>
+          <p>The stable baseline generated from the ATS-aware template flow.</p>
+        </div>
+        <dl class="detail-grid">
+          <div>
+            <dt>ATS Score</dt>
+            <dd>{{ view.result.rule_based.payload.ats_score }}</dd>
+          </div>
+          <div>
+            <dt>Matched Keywords</dt>
+            <dd>{{ view.result.rule_based.payload.matched_keywords | length }}</dd>
+          </div>
+        </dl>
+        <ul class="token-list">
+          {% for keyword in view.result.rule_based.payload.matched_keywords %}
+            <li>{{ keyword }}</li>
+          {% endfor %}
+        </ul>
+        {% if view.result.rule_based.payload.missing_keywords %}
+          <div class="callout">
+            <p><strong>Missing keywords:</strong> {{ view.result.rule_based.payload.missing_keywords | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <article class="panel compare-card compare-card--llm">
+        <div class="panel__header">
+          <h2>LLM Draft</h2>
+          <p>The Ollama-generated version with richer employer-specific framing.</p>
+        </div>
+        <dl class="detail-grid">
+          <div>
+            <dt>ATS Score</dt>
+            <dd>{{ view.result.llm.payload.ats_score }}</dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd>{{ view.result.llm.payload.llm_model }}</dd>
+          </div>
+        </dl>
+        <ul class="token-list">
+          {% for keyword in view.result.llm.payload.matched_keywords %}
+            <li>{{ keyword }}</li>
+          {% endfor %}
+        </ul>
+        {% if view.result.llm.payload.missing_keywords %}
+          <div class="callout">
+            <p><strong>Missing keywords:</strong> {{ view.result.llm.payload.missing_keywords | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.llm.payload.employer_specific_focus %}
+          <div class="callout">
+            <p><strong>Employer-specific focus:</strong> {{ view.result.llm.payload.employer_specific_focus | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.llm.payload.evidence_used %}
+          <div class="callout">
+            <p><strong>Evidence used:</strong> {{ view.result.llm.payload.evidence_used | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.llm.payload.caution_flags %}
+          <div class="callout">
+            <p><strong>Caution flags:</strong> {{ view.result.llm.payload.caution_flags | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="compare-drafts">
+      <article class="panel compare-drafts__panel">
+        <div class="panel__header">
+          <h2>Rule-Based Text</h2>
+        </div>
+        <pre class="code-preview"><code>{{ view.result.rule_based.payload.cover_letter_text }}</code></pre>
+      </article>
+
+      <article class="panel compare-drafts__panel">
+        <div class="panel__header">
+          <h2>LLM Text</h2>
+        </div>
+        <pre class="code-preview"><code>{{ view.result.llm.payload.cover_letter_text }}</code></pre>
+      </article>
+    </section>
+  {% endif %}
+{% endblock %}

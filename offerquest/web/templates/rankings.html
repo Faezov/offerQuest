@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel__header">
+      <h2>Latest Ranking Output</h2>
+      <p>The newest ranking JSON found under <code>outputs/</code>.</p>
+    </div>
+
+    {% if view.has_ranking %}
+      <dl class="detail-grid">
+        <div>
+          <dt>Ranking File</dt>
+          <dd><code>{{ view.ranking_file }}</code></dd>
+        </div>
+        <div>
+          <dt>Modified</dt>
+          <dd>{{ view.modified_at }}</dd>
+        </div>
+        <div>
+          <dt>Job Count</dt>
+          <dd>{{ view.job_count }}</dd>
+        </div>
+        <div>
+          <dt>Recorded Run</dt>
+          <dd>
+            {% if view.run_reference %}
+              <a href="{{ request.url_for('run_detail', run_id=view.run_reference.run_id) }}">{{ view.run_reference.run_label or view.run_reference.run_id }}</a>
+            {% else %}
+              Not linked to a recorded run
+            {% endif %}
+          </dd>
+        </div>
+      </dl>
+    {% else %}
+      <div class="empty-state">
+        <h3>No ranking file found</h3>
+        <p>Run a ranking command first and save it into <code>outputs/</code>, then reload this page.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if view.has_ranking %}
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Top Ranked Jobs</h2>
+        <p>The strongest current opportunities from the latest ranking payload.</p>
+      </div>
+      <div class="ranking-table">
+        <div class="ranking-table__head">
+          <span>Rank</span>
+          <span>Role</span>
+          <span>Company</span>
+          <span>Location</span>
+          <span>Score</span>
+          <span>Links</span>
+        </div>
+        {% for item in view.top_rankings %}
+          <div class="ranking-table__row">
+            <span>#{{ item.rank }}</span>
+            <div>
+              <strong>{{ item.job_title }}</strong>
+              {% if item.employment_type %}
+                <p class="ranking-table__meta">{{ item.employment_type }}</p>
+              {% endif %}
+            </div>
+            <span>{{ item.company }}</span>
+            <span>{{ item.location }}</span>
+            <span class="score-pill">{{ item.score }}</span>
+            <div class="ranking-table__links">
+              {% if item.job_id %}
+                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based">Generate Draft</a>
+                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm">Generate LLM Draft</a>
+                <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}">Compare Drafts</a>
+              {% endif %}
+              {% if item.job_url %}
+                <a href="{{ item.job_url }}" target="_blank" rel="noreferrer">Listing</a>
+              {% endif %}
+              {% if item.job_id %}
+                <code>{{ item.job_id }}</code>
+              {% endif %}
+            </div>
+          </div>
+          {% if item.strengths or item.gaps %}
+            <div class="ranking-table__notes">
+              {% if item.strengths %}
+                <p><strong>Strengths:</strong> {{ item.strengths | join("; ") }}</p>
+              {% endif %}
+              {% if item.gaps %}
+                <p><strong>Gaps:</strong> {{ item.gaps | join("; ") }}</p>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

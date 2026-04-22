@@ -279,6 +279,72 @@ h1 {
   gap: 0.8rem;
 }
 
+.ranking-table {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ranking-table__head,
+.ranking-table__row {
+  display: grid;
+  grid-template-columns: 0.7fr 1.8fr 1.2fr 1.2fr 0.7fr 1.3fr;
+  gap: 1rem;
+  align-items: center;
+}
+
+.ranking-table__head {
+  padding: 0 0.25rem;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.ranking-table__row {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.ranking-table__meta {
+  margin: 0.3rem 0 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.ranking-table__links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ranking-table__links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ranking-table__notes {
+  padding: 0 1rem 0.85rem 1rem;
+  color: var(--muted);
+}
+
+.ranking-table__notes p {
+  margin: 0.35rem 0 0 0;
+}
+
+.score-pill {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 3.4rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .artifact-table__head,
 .artifact-table__row {
   display: grid;
@@ -325,6 +391,20 @@ h1 {
   gap: 1rem;
 }
 
+.subsection {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid var(--line);
+}
+
+.subsection__summary {
+  margin: 0;
+  color: var(--muted);
+}
+
 .field {
   display: grid;
   gap: 0.45rem;
@@ -360,6 +440,27 @@ h1 {
 
 .primary-button:hover {
   filter: brightness(1.03);
+}
+
+.compare-output-grid,
+.compare-card-grid,
+.compare-drafts {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.compare-card {
+  background: linear-gradient(160deg, var(--card-strong), rgba(249, 243, 230, 0.9));
+}
+
+.compare-card--llm {
+  background: linear-gradient(160deg, rgba(240, 253, 250, 0.96), rgba(222, 247, 241, 0.9));
+}
+
+.compare-drafts__panel .code-preview {
+  margin-top: 0;
+  min-height: 24rem;
 }
 
 .token-list,
@@ -418,7 +519,15 @@ code {
     display: none;
   }
 
+  .ranking-table__head {
+    display: none;
+  }
+
   .artifact-table__row {
+    grid-template-columns: 1fr;
+  }
+
+  .ranking-table__row {
     grid-template-columns: 1fr;
   }
 }

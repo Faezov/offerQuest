@@ -56,6 +56,7 @@ offerquest-workbench --root . --reload
 ```
 
 Then open `http://127.0.0.1:8787` in your browser.
+The `Job Sources` page can save Adzuna credentials into `~/.config/offerquest/adzuna.env` so browser-driven and CLI fetches can reuse them automatically.
 
 Build a profile from the current documents:
 
@@ -327,7 +328,7 @@ python3 -m offerquest rank-jobs \
 - It is designed to surface fit quickly and consistently, not replace judgment.
 - `ats-check` is an ATS-style heuristic review, not a vendor-specific simulation of Workday, Greenhouse, Lever, or Taleo.
 - `refresh-jobs` uses [jobs/sources.json](/home/bulat/app/offerQuest/jobs/sources.json) by default, so adding or removing search streams is a config change rather than a shell-history exercise.
-- `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.
+- `fetch-adzuna` and `refresh-jobs` first use explicit flags, then process environment variables, then `~/.config/offerquest/adzuna.env` if present.
 - The Ollama-backed cover letter commands require a local Ollama server and a pulled model such as `qwen3:0.6b` for a quick smoke test or `qwen3:8b` for better quality.
 - The curated stronger model set currently favors `qwen3:8b`, `gemma3:12b`, and `qwen3:14b`, with `mistral-small` treated as a stretch option because it is more likely to spill beyond a ~12 GB GPU.
 - `./scripts/ollama-local.sh` keeps the Ollama home directory and model cache under `.ollama-home/` in this repo, which avoids mixing job-search models into your normal shell environment.

@@ -15,7 +15,12 @@ from .cover_letter import (
 )
 from .docx import export_document_as_docx
 from .extractors import read_document_text
-from .jobs import find_job_record, read_job_records
+from .jobs import (
+    find_job_record,
+    load_adzuna_credentials_status,
+    read_job_records,
+    write_adzuna_credentials_file,
+)
 from .profile import build_candidate_profile, build_profile_from_files
 from .reranking import rerank_job_records
 from .resume_tailoring import (
@@ -98,6 +103,14 @@ class BuildRerankJobsResult:
     output_path: Path
     output_path_relative: str
     run_manifest: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SaveAdzunaCredentialsResult:
+    credentials_path: Path
+    credentials_path_display: str
+    saved_app_id_masked: str | None
+    saved_app_key_masked: str | None
 
 
 def build_dashboard_view(project_state: ProjectState) -> dict[str, Any]:
@@ -264,6 +277,26 @@ def build_rerank_jobs_form_view(
         "has_rankings": bool(ranking_sources),
         "has_jobs_files": bool(jobs_files),
         "has_documents": bool(documents),
+    }
+
+
+def build_job_sources_view(
+    project_state: ProjectState,
+    *,
+    app_id: str | None = None,
+    error: str | None = None,
+    result: SaveAdzunaCredentialsResult | None = None,
+) -> dict[str, Any]:
+    credentials = load_adzuna_credentials_status()
+    source_summary = load_job_sources_summary(project_state)
+
+    return {
+        "entered_app_id": app_id or "",
+        "credentials": credentials,
+        "credentials_path_display": format_user_path(credentials["path"]),
+        "source_summary": source_summary,
+        "error": error,
+        "result": result,
     }
 
 
@@ -516,6 +549,32 @@ def build_run_card(project_state: ProjectState, run: dict[str, Any]) -> dict[str
         "artifact_count": len(artifacts),
         "artifacts": artifacts,
     }
+
+
+def run_adzuna_credentials_save(
+    *,
+    app_id: str | None,
+    app_key: str | None,
+) -> SaveAdzunaCredentialsResult:
+    existing = load_adzuna_credentials_status()
+    normalized_app_id = (app_id or "").strip() or existing.get("saved_app_id")
+    normalized_app_key = (app_key or "").strip() or existing.get("saved_app_key")
+    if not normalized_app_id or not normalized_app_key:
+        raise ValueError(
+            "Adzuna app id and app key are required. After the first save, you can leave a field blank to keep the current saved value."
+        )
+
+    credentials_path = write_adzuna_credentials_file(
+        normalized_app_id,
+        normalized_app_key,
+    )
+    saved_status = load_adzuna_credentials_status(credentials_path)
+    return SaveAdzunaCredentialsResult(
+        credentials_path=credentials_path,
+        credentials_path_display=format_user_path(credentials_path),
+        saved_app_id_masked=saved_status.get("saved_app_id_masked"),
+        saved_app_key_masked=saved_status.get("saved_app_key_masked"),
+    )
 
 
 def run_profile_build(
@@ -1340,3 +1399,93 @@ def normalize_boolean_toggle(value: str | bool | None, *, default: bool) -> bool
     if isinstance(value, bool):
         return value
     return value.lower() not in {"", "0", "false", "off", "no"}
+
+
+def load_job_sources_summary(project_state: ProjectState) -> dict[str, Any]:
+    config_path = project_state.root / "jobs" / "sources.json"
+    summary = {
+        "exists": config_path.exists(),
+        "path": config_path,
+        "path_relative": str(relative_to_root(config_path, project_state.root)),
+        "sources": [],
+        "source_count": 0,
+        "adzuna_count": 0,
+        "greenhouse_count": 0,
+        "manual_count": 0,
+        "other_count": 0,
+        "error": None,
+    }
+    if not config_path.exists():
+        return summary
+
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {**summary, "error": f"Could not parse jobs/sources.json: {exc.msg}"}
+
+    raw_sources = payload.get("sources", [])
+    if not isinstance(raw_sources, list):
+        return {**summary, "error": "jobs/sources.json must contain a `sources` list."}
+
+    sources: list[dict[str, Any]] = []
+    counts = {
+        "adzuna_count": 0,
+        "greenhouse_count": 0,
+        "manual_count": 0,
+        "other_count": 0,
+    }
+
+    for index, raw_source in enumerate(raw_sources, start=1):
+        if not isinstance(raw_source, dict):
+            continue
+        source_type = str(raw_source.get("type") or "unknown").strip().lower()
+        if source_type == "adzuna":
+            counts["adzuna_count"] += 1
+            details = " / ".join(
+                part
+                for part in [
+                    str(raw_source.get("what") or "").strip(),
+                    str(raw_source.get("where") or "").strip(),
+                    str(raw_source.get("country") or "").strip(),
+                ]
+                if part
+            )
+        elif source_type == "greenhouse":
+            counts["greenhouse_count"] += 1
+            details = str(raw_source.get("board_token") or "").strip()
+        elif source_type == "manual":
+            counts["manual_count"] += 1
+            details = str(raw_source.get("input_path") or "").strip()
+        else:
+            counts["other_count"] += 1
+            details = ""
+
+        sources.append(
+            {
+                "index": index,
+                "name": str(
+                    raw_source.get("name") or raw_source.get("output") or f"source-{index}"
+                ).strip(),
+                "type": source_type,
+                "enabled": raw_source.get("enabled", True) is not False,
+                "details": details,
+                "output": str(raw_source.get("output") or "").strip() or None,
+            }
+        )
+
+    return {
+        **summary,
+        **counts,
+        "sources": sources,
+        "source_count": len(sources),
+    }
+
+
+def format_user_path(path: Path) -> str:
+    resolved = path.expanduser().resolve()
+    home = Path.home().resolve()
+    try:
+        relative_home = resolved.relative_to(home)
+    except ValueError:
+        return str(resolved)
+    return str(Path("~") / relative_home)

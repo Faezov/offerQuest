@@ -11,6 +11,7 @@ from ..workbench import (
     build_cover_letter_compare_view,
     build_cover_letter_form_view,
     build_dashboard_view,
+    build_job_sources_view,
     build_latest_rankings_view,
     build_profile_form_view,
     build_rerank_jobs_form_view,
@@ -18,6 +19,7 @@ from ..workbench import (
     build_resume_tailoring_form_view,
     build_run_detail_view,
     build_runs_view,
+    run_adzuna_credentials_save,
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
@@ -92,6 +94,17 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
             {
                 "page_title": "Latest Rankings",
                 "view": build_latest_rankings_view(project_state),
+            },
+        )
+
+    @app.get("/job-sources", response_class=HTMLResponse)
+    async def job_sources(request: Request) -> HTMLResponse:
+        return render(
+            request,
+            "job_sources.html",
+            {
+                "page_title": "Job Sources",
+                "view": build_job_sources_view(project_state),
             },
         )
 
@@ -257,6 +270,43 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
                     cv_path=cv_path,
                     cover_letter_path=cover_letter_path,
                     output_path=output_path,
+                    result=result,
+                ),
+            },
+        )
+
+    @app.post("/job-sources", response_class=HTMLResponse)
+    async def job_sources_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        app_id = str(form.get("app_id") or "").strip()
+        app_key = str(form.get("app_key") or "").strip()
+
+        try:
+            result = run_adzuna_credentials_save(
+                app_id=app_id or None,
+                app_key=app_key or None,
+            )
+        except (OSError, ValueError) as exc:
+            return render(
+                request,
+                "job_sources.html",
+                {
+                    "page_title": "Job Sources",
+                    "view": build_job_sources_view(
+                        project_state,
+                        app_id=app_id or None,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "job_sources.html",
+            {
+                "page_title": "Job Sources",
+                "view": build_job_sources_view(
+                    project_state,
                     result=result,
                 ),
             },

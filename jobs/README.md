@@ -6,6 +6,8 @@ The default refresh workflow is driven by [sources.json](/home/bulat/app/offerQu
 python3 -m offerquest refresh-jobs
 ```
 
+Adzuna-backed sources can reuse credentials saved in `~/.config/offerquest/adzuna.env`, including from the workbench `Job Sources` page.
+
 That command can regenerate:
 
 - `outputs/jobs/adzuna-*.jsonl` from configured Adzuna searches

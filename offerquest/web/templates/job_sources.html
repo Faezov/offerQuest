@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Adzuna Credentials</h2>
+        <p>Save your Adzuna app id and app key once, then OfferQuest can use them automatically for job refreshes and direct Adzuna pulls.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if view.result %}
+        <div class="callout">
+          <p><strong>Saved credentials file:</strong> <code>{{ view.result.credentials_path_display }}</code></p>
+          <p><strong>Stored app id:</strong> {{ view.result.saved_app_id_masked or "Not saved" }}</p>
+          <p><strong>Stored app key:</strong> {{ view.result.saved_app_key_masked or "Not saved" }}</p>
+        </div>
+      {% endif %}
+
+      {% if view.credentials.is_env_override %}
+        <div class="callout">
+          <p>Environment variables are currently overriding the saved file for this session. New saves still update the file, but the running process will keep using the environment values until those are removed.</p>
+        </div>
+      {% endif %}
+
+      <form method="post" class="form-stack">
+        <label class="field">
+          <span>Adzuna app id</span>
+          <input
+            type="text"
+            name="app_id"
+            value="{{ view.entered_app_id }}"
+            placeholder="{% if view.credentials.saved_app_id_masked %}Leave blank to keep {{ view.credentials.saved_app_id_masked }}{% else %}Paste your Adzuna app id{% endif %}"
+            autocomplete="off"
+          >
+        </label>
+
+        <label class="field">
+          <span>Adzuna app key</span>
+          <input
+            type="password"
+            name="app_key"
+            value=""
+            placeholder="{% if view.credentials.saved_app_key_masked %}Leave blank to keep current saved key{% else %}Paste your Adzuna app key{% endif %}"
+            autocomplete="off"
+          >
+        </label>
+
+        <div class="subsection">
+          <p class="subsection__summary">Credentials are written outside the repo to <code>{{ view.credentials_path_display }}</code>. After the first save, you can leave a field blank to keep the existing stored value.</p>
+        </div>
+
+        <button class="primary-button" type="submit">Save Adzuna Credentials</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Current Status</h2>
+        <p>This shows the effective credential source the app will use right now.</p>
+      </div>
+
+      <dl class="detail-grid">
+        <div>
+          <dt>Effective status</dt>
+          <dd>{{ "Configured" if view.credentials.has_effective_credentials else "Missing" }}</dd>
+        </div>
+        <div>
+          <dt>Effective source</dt>
+          <dd>{{ view.credentials.effective_source }}</dd>
+        </div>
+        <div>
+          <dt>Credentials file</dt>
+          <dd><code>{{ view.credentials_path_display }}</code></dd>
+        </div>
+        <div>
+          <dt>Configured streams</dt>
+          <dd>{{ view.source_summary.source_count }}</dd>
+        </div>
+      </dl>
+
+      {% if view.credentials.has_effective_credentials %}
+        <div class="callout">
+          <p><strong>Effective app id:</strong> {{ view.credentials.effective_app_id_masked }}</p>
+          <p><strong>Effective app key:</strong> {{ view.credentials.effective_app_key_masked }}</p>
+        </div>
+      {% else %}
+        <div class="empty-state compact">
+          <p>No usable Adzuna credentials found yet.</p>
+        </div>
+      {% endif %}
+
+      <ul class="token-list">
+        <li>{{ view.source_summary.adzuna_count }} Adzuna</li>
+        <li>{{ view.source_summary.greenhouse_count }} Greenhouse</li>
+        <li>{{ view.source_summary.manual_count }} Manual</li>
+        {% if view.source_summary.other_count %}
+          <li>{{ view.source_summary.other_count }} Other</li>
+        {% endif %}
+      </ul>
+    </article>
+  </section>
+
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Configured Job Streams</h2>
+        <p>These entries come from <code>{{ view.source_summary.path_relative }}</code>.</p>
+      </div>
+
+      {% if view.source_summary.error %}
+        <div class="callout callout--error">
+          <p>{{ view.source_summary.error }}</p>
+        </div>
+      {% elif not view.source_summary.exists %}
+        <div class="empty-state">
+          <h3>No source config found</h3>
+          <p>Create <code>jobs/sources.json</code> to define the Adzuna searches and other streams that feed <code>outputs/jobs/all.jsonl</code>.</p>
+        </div>
+      {% elif view.source_summary.sources %}
+        <div class="advice-stack">
+          {% for source in view.source_summary.sources %}
+            <div class="advice-card">
+              <p class="advice-card__eyebrow">{{ source.type }}{% if not source.enabled %} disabled{% endif %}</p>
+              <h3>{{ source.name }}</h3>
+              {% if source.details %}
+                <p>{{ source.details }}</p>
+              {% endif %}
+              {% if source.output %}
+                <p><strong>Output:</strong> <code>{{ source.output }}</code></p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state compact">
+          <p>The source config is present but does not contain any valid source entries yet.</p>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>What This Enables</h2>
+        <p>Once the credentials are saved, you no longer need to pass Adzuna keys on every CLI run.</p>
+      </div>
+      <ol class="step-list">
+        <li><code>python3 -m offerquest refresh-jobs</code> can rebuild the configured job-source files using the saved credentials.</li>
+        <li><code>python3 -m offerquest fetch-adzuna</code> can also fall back to the saved file when flags are omitted.</li>
+        <li>The credentials file stays outside the workspace, so it is not committed into this repo or recorded in workbench runs.</li>
+      </ol>
+    </article>
+  </section>
+{% endblock %}

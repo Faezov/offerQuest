@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from offerquest.cover_letter import (
     generate_cover_letter_for_job_record,
+    generate_cover_letters_from_ranking,
     write_cover_letter,
 )
 
@@ -51,6 +53,88 @@ class CoverLetterTests(unittest.TestCase):
             content = output_path.read_text(encoding="utf-8")
 
         self.assertIn("Dear Hiring Team", content)
+
+    def test_generate_cover_letters_from_ranking_creates_top_unique_outputs(self) -> None:
+        ranking_payload = {
+            "rankings": [
+                {
+                    "job_id": "adzuna:1",
+                    "company": "Mane Consulting",
+                    "job_title": "Senior Data Analyst",
+                },
+                {
+                    "job_id": "adzuna:2",
+                    "company": "Mane Consulting",
+                    "job_title": "Senior Data Analyst",
+                },
+                {
+                    "job_id": "adzuna:3",
+                    "company": "HAYS",
+                    "job_title": "Senior Data Analyst",
+                },
+            ]
+        }
+        jobs = [
+            {
+                "id": "adzuna:1",
+                "source": "adzuna",
+                "title": "Senior Data Analyst",
+                "company": "Mane Consulting",
+                "location": "Sydney",
+                "description_text": "Required skills: reporting, automation, SQL.",
+                "url": "https://example.com/1",
+            },
+            {
+                "id": "adzuna:2",
+                "source": "adzuna",
+                "title": "Senior Data Analyst",
+                "company": "Mane Consulting",
+                "location": "Sydney",
+                "description_text": "Required skills: reporting, automation, SQL.",
+                "url": "https://example.com/2",
+            },
+            {
+                "id": "adzuna:3",
+                "source": "adzuna",
+                "title": "Senior Data Analyst",
+                "company": "HAYS",
+                "location": "Sydney",
+                "description_text": "Required skills: reporting, SQL.",
+                "url": "https://example.com/3",
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ranking_path = Path(tmpdir) / "ranking.json"
+            ranking_path.write_text(json.dumps(ranking_payload), encoding="utf-8")
+
+            jobs_path = Path(tmpdir) / "jobs.jsonl"
+            jobs_path.write_text(
+                "\n".join(json.dumps(job) for job in jobs) + "\n",
+                encoding="utf-8",
+            )
+
+            output_dir = Path(tmpdir) / "letters"
+            summary = generate_cover_letters_from_ranking(
+                "data/CV_BF_20260415.docx",
+                jobs_path,
+                ranking_path,
+                output_dir,
+                base_cover_letter_path="data/CL_BF_20260415.doc",
+                top_n=5,
+                export_docx=True,
+            )
+
+            summary_path = output_dir / "summary.json"
+            summary_path_exists = summary_path.exists()
+            item_docx_paths = [Path(item["docx_path"]).exists() for item in summary["items"]]
+
+        self.assertEqual(summary["job_count"], 2)
+        self.assertTrue(summary_path_exists)
+        self.assertTrue(any(item["company"] == "Mane Consulting" for item in summary["items"]))
+        self.assertTrue(any(item["company"] == "HAYS" for item in summary["items"]))
+        self.assertTrue(all("docx_path" in item for item in summary["items"]))
+        self.assertTrue(all(item_docx_paths))
 
 
 if __name__ == "__main__":

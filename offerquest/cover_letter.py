@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from .ats import build_ats_report
+from .docx import export_document_as_docx
 from .extractors import read_document_text
-from .jobs import job_record_to_text
+from .jobs import find_job_record, job_record_to_text, read_job_records
 from .profile import build_candidate_profile
 from .scoring import infer_job_title
 
@@ -86,6 +88,71 @@ def generate_cover_letter_for_job_record(
         "matched_keywords": ats_report["keyword_coverage"]["matched_keywords"],
         "missing_keywords": ats_report["keyword_coverage"]["missing_keywords"],
     }
+
+
+def generate_cover_letters_from_ranking(
+    cv_path: str | Path,
+    jobs_file: str | Path,
+    ranking_file: str | Path,
+    output_dir: str | Path,
+    *,
+    base_cover_letter_path: str | Path | None = None,
+    top_n: int = 5,
+    export_docx: bool = False,
+) -> dict:
+    job_records = read_job_records(jobs_file)
+    ranking_payload = json.loads(Path(ranking_file).read_text(encoding="utf-8"))
+    rankings = ranking_payload.get("rankings", [])
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    selected_rankings = select_top_unique_rankings(rankings, limit=top_n)
+    generated: list[dict] = []
+
+    for index, ranking in enumerate(selected_rankings, start=1):
+        job_id = ranking.get("job_id")
+        if not job_id:
+            continue
+        job_record = find_job_record(job_records, job_id)
+        if job_record is None:
+            continue
+
+        payload = generate_cover_letter_for_job_record(
+            cv_path,
+            job_record,
+            base_cover_letter_path=base_cover_letter_path,
+        )
+        filename_stem = build_cover_letter_filename(index, payload)
+        text_path = output_path / f"{filename_stem}.txt"
+        write_cover_letter(text_path, payload)
+
+        item = {
+            "rank": index,
+            "job_id": payload.get("job_id"),
+            "company": payload.get("company"),
+            "job_title": payload.get("job_title"),
+            "location": payload.get("location"),
+            "job_url": payload.get("job_url"),
+            "ats_score": payload.get("ats_score"),
+            "text_path": str(text_path),
+            "missing_keywords": payload.get("missing_keywords", []),
+        }
+
+        if export_docx:
+            docx_path = output_path / f"{filename_stem}.docx"
+            export_document_as_docx(text_path, docx_path)
+            item["docx_path"] = str(docx_path)
+
+        generated.append(item)
+
+    summary = {
+        "job_count": len(generated),
+        "output_dir": str(output_path),
+        "items": generated,
+    }
+    (output_path / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
 
 
 def build_cover_letter_text(*, profile: dict, ats_report: dict, job_context: dict) -> str:
@@ -249,3 +316,33 @@ def write_cover_letter(path: str | Path, payload: dict) -> None:
         return
 
     output_path.write_text(payload["cover_letter_text"], encoding="utf-8")
+
+
+def select_top_unique_rankings(rankings: list[dict], *, limit: int) -> list[dict]:
+    seen: set[tuple[str, str]] = set()
+    selected: list[dict] = []
+
+    for ranking in rankings:
+        company = (ranking.get("company") or "").strip().lower()
+        job_title = (ranking.get("job_title") or "").strip().lower()
+        dedupe_key = (company, job_title)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        selected.append(ranking)
+        if len(selected) >= limit:
+            break
+
+    return selected
+
+
+def build_cover_letter_filename(index: int, payload: dict) -> str:
+    company = slugify(payload.get("company") or "unknown-company")
+    title = slugify(payload.get("job_title") or "job")
+    return f"{index:02d}-{company}-{title}"
+
+
+def slugify(value: str) -> str:
+    lowered = value.lower()
+    lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
+    return lowered.strip("-") or "item"

@@ -8,6 +8,7 @@ from .ats import ats_check_job_file, ats_check_job_record
 from .cover_letter import (
     generate_cover_letter_for_job_file,
     generate_cover_letter_for_job_record,
+    generate_cover_letters_from_ranking,
     write_cover_letter,
 )
 from .docx import export_document_as_docx
@@ -64,6 +65,18 @@ def build_parser() -> argparse.ArgumentParser:
     cover_letter_job_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
     cover_letter_parser.add_argument("--job-id", help="Job id inside --jobs-file")
     cover_letter_parser.add_argument("--output", type=Path, required=True, help="Write generated cover letter to this path")
+
+    cover_letters_parser = subparsers.add_parser(
+        "generate-cover-letters",
+        help="Generate cover letter drafts for the top ranked jobs",
+    )
+    cover_letters_parser.add_argument("--cv", type=Path, required=True, help="CV file")
+    cover_letters_parser.add_argument("--base-cover-letter", type=Path, help="Optional source cover letter for tone and context")
+    cover_letters_parser.add_argument("--jobs-file", type=Path, required=True, help="JSON or JSONL file of normalized job records")
+    cover_letters_parser.add_argument("--ranking-file", type=Path, required=True, help="Ranking JSON file produced by rank-jobs")
+    cover_letters_parser.add_argument("--output-dir", type=Path, required=True, help="Directory for generated cover letters")
+    cover_letters_parser.add_argument("--top", type=int, default=5, help="How many top unique jobs to generate, default: 5")
+    cover_letters_parser.add_argument("--docx", action="store_true", help="Also export each generated letter as .docx")
 
     ats_parser = subparsers.add_parser(
         "ats-check",
@@ -197,6 +210,19 @@ def main() -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "generate-cover-letters":
+        summary = generate_cover_letters_from_ranking(
+            args.cv,
+            args.jobs_file,
+            args.ranking_file,
+            args.output_dir,
+            base_cover_letter_path=args.base_cover_letter,
+            top_n=args.top,
+            export_docx=args.docx,
+        )
+        print(json.dumps(summary, indent=2))
         return 0
 
     if args.command == "ats-check":

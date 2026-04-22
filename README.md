@@ -51,6 +51,19 @@ python3 -m offerquest generate-cover-letter \
   --output outputs/cover-letter-mane.txt
 ```
 
+Generate cover letters for the top 5 ranked jobs:
+
+```bash
+python3 -m offerquest generate-cover-letters \
+  --cv data/CV_BF_20260415.docx \
+  --base-cover-letter data/CL_BF_20260415.doc \
+  --jobs-file outputs/jobs/all.jsonl \
+  --ranking-file outputs/job-ranking-docx.json \
+  --output-dir outputs/cover-letters-top5 \
+  --top 5 \
+  --docx
+```
+
 Score one job description:
 
 ```bash

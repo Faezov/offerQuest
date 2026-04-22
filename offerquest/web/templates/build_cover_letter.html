@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Generate Cover Letter</h2>
+        <p>Create a saved draft for the selected ranked job using either the rule-based flow or the Ollama-backed LLM flow.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if not view.has_rankings %}
+        <div class="empty-state">
+          <h3>No ranking data available</h3>
+          <p>Run job ranking first so the workbench has a selected job to work from.</p>
+        </div>
+      {% elif not view.selected_job %}
+        <div class="empty-state">
+          <h3>No job selected</h3>
+          <p>Open this page from the rankings view or pass a valid ranked job id.</p>
+        </div>
+      {% elif not view.has_documents %}
+        <div class="empty-state">
+          <h3>No candidate documents found</h3>
+          <p>Add your CV and base cover letter under <code>data/</code> first.</p>
+        </div>
+      {% elif not view.has_jobs_files %}
+        <div class="empty-state">
+          <h3>No jobs files found</h3>
+          <p>Import or fetch jobs into <code>outputs/</code> first so the selected ranking can be resolved back to a full job record.</p>
+        </div>
+      {% else %}
+        <form method="post" class="form-stack">
+          <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
+          <input type="hidden" name="job_id" value="{{ view.selected_job.job_id or '' }}">
+
+          <div class="callout">
+            <p><strong>Selected job:</strong> {{ view.selected_job.job_title }} at {{ view.selected_job.company }}</p>
+            <p><strong>Location:</strong> {{ view.selected_job.location or "Unknown" }}</p>
+            <p><strong>Score:</strong> {{ view.selected_job.score }}</p>
+          </div>
+
+          <label class="field">
+            <span>Draft mode</span>
+            <select name="draft_mode" required>
+              <option value="rule_based" {% if view.selected_draft_mode == "rule_based" %}selected{% endif %}>Rule-based draft</option>
+              <option value="llm" {% if view.selected_draft_mode == "llm" %}selected{% endif %}>LLM draft (Ollama)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>CV file</span>
+            <select name="cv_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Base cover letter file</span>
+            <select name="base_cover_letter_path">
+              <option value="">None</option>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Jobs file</span>
+            <select name="jobs_file" required>
+              {% for item in view.jobs_files %}
+                <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
+                  {{ item.relative_path }} ({{ item.record_count }} records)
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Output path</span>
+            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+          </label>
+
+          <div class="subsection">
+            <h3>LLM Settings</h3>
+            <p class="subsection__summary">These fields are only used when draft mode is set to <code>LLM draft</code>.</p>
+
+            <label class="field">
+              <span>Model</span>
+              <input type="text" name="llm_model" value="{{ view.selected_llm_model }}">
+            </label>
+
+            <label class="field">
+              <span>Base URL</span>
+              <input type="text" name="llm_base_url" value="{{ view.selected_llm_base_url }}">
+            </label>
+
+            <label class="field">
+              <span>Timeout seconds</span>
+              <input type="text" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}">
+            </label>
+          </div>
+
+          <button class="primary-button" type="submit">Generate Draft</button>
+        </form>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>What Gets Generated</h2>
+        <p>The workbench now supports both the existing ATS-aware template flow and the local Ollama-backed draft flow.</p>
+      </div>
+      <ol class="step-list">
+        <li>Loads the selected ranked job from the chosen jobs file.</li>
+        <li>Uses either the rule-based generator or the Ollama generator based on the selected mode.</li>
+        <li>Saves a draft, records a run, and shows the generated text immediately.</li>
+      </ol>
+    </article>
+  </section>
+
+  {% if view.result %}
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Draft Created</h2>
+          <p>
+            Saved to <code>{{ view.result.output_path_relative }}</code>.
+            <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+          </p>
+        </div>
+        <dl class="detail-grid">
+          <div>
+            <dt>Role</dt>
+            <dd>{{ view.result.payload.job_title }}</dd>
+          </div>
+          <div>
+            <dt>Company</dt>
+            <dd>{{ view.result.payload.company }}</dd>
+          </div>
+          <div>
+            <dt>Mode</dt>
+            <dd>{{ "LLM draft" if view.result.draft_mode == "llm" else "Rule-based draft" }}</dd>
+          </div>
+          <div>
+            <dt>ATS Score</dt>
+            <dd>{{ view.result.payload.ats_score }}</dd>
+          </div>
+          <div>
+            <dt>Job ID</dt>
+            <dd><code>{{ view.result.payload.job_id }}</code></dd>
+          </div>
+          {% if view.result.payload.llm_model %}
+            <div>
+              <dt>Model</dt>
+              <dd>{{ view.result.payload.llm_model }}</dd>
+            </div>
+          {% endif %}
+        </dl>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Tailoring Notes</h2>
+        </div>
+        <ul class="token-list">
+          {% for keyword in view.result.payload.matched_keywords %}
+            <li>{{ keyword }}</li>
+          {% endfor %}
+        </ul>
+        {% if view.result.payload.missing_keywords %}
+          <div class="callout">
+            <p><strong>Missing keywords:</strong> {{ view.result.payload.missing_keywords | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.payload.employer_specific_focus %}
+          <div class="callout">
+            <p><strong>Employer-specific focus:</strong> {{ view.result.payload.employer_specific_focus | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.payload.evidence_used %}
+          <div class="callout">
+            <p><strong>Evidence used:</strong> {{ view.result.payload.evidence_used | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.payload.caution_flags %}
+          <div class="callout">
+            <p><strong>Caution flags:</strong> {{ view.result.payload.caution_flags | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Generated Draft</h2>
+      </div>
+      <pre class="code-preview"><code>{{ view.result.payload.cover_letter_text }}</code></pre>
+    </section>
+  {% endif %}
+{% endblock %}

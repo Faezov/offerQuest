@@ -3,13 +3,20 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..errors import ProfileValidationError
+from ..ollama import OllamaError
 from ..workspace import ProjectState
 from ..workbench import (
     build_artifact_preview,
+    build_cover_letter_compare_view,
+    build_cover_letter_form_view,
     build_dashboard_view,
+    build_latest_rankings_view,
     build_profile_form_view,
     build_run_detail_view,
     build_runs_view,
+    run_cover_letter_compare,
+    run_cover_letter_build,
     run_profile_build,
 )
 
@@ -71,6 +78,17 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
             },
         )
 
+    @app.get("/rankings", response_class=HTMLResponse)
+    async def rankings(request: Request) -> HTMLResponse:
+        return render(
+            request,
+            "rankings.html",
+            {
+                "page_title": "Latest Rankings",
+                "view": build_latest_rankings_view(project_state),
+            },
+        )
+
     @app.get("/build-profile", response_class=HTMLResponse)
     async def build_profile_page(request: Request) -> HTMLResponse:
         return render(
@@ -79,6 +97,46 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
             {
                 "page_title": "Build Profile",
                 "view": build_profile_form_view(project_state),
+            },
+        )
+
+    @app.get("/cover-letters/new", response_class=HTMLResponse)
+    async def build_cover_letter_page(
+        request: Request,
+        ranking_file: str | None = None,
+        job_id: str | None = None,
+        mode: str | None = None,
+    ) -> HTMLResponse:
+        return render(
+            request,
+            "build_cover_letter.html",
+            {
+                "page_title": "Generate Cover Letter",
+                "view": build_cover_letter_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                    draft_mode=mode,
+                ),
+            },
+        )
+
+    @app.get("/cover-letters/compare", response_class=HTMLResponse)
+    async def compare_cover_letters_page(
+        request: Request,
+        ranking_file: str | None = None,
+        job_id: str | None = None,
+    ) -> HTMLResponse:
+        return render(
+            request,
+            "compare_cover_letters.html",
+            {
+                "page_title": "Compare Drafts",
+                "view": build_cover_letter_compare_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                ),
             },
         )
 
@@ -138,6 +196,247 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
                     cv_path=cv_path,
                     cover_letter_path=cover_letter_path,
                     output_path=output_path,
+                    result=result,
+                ),
+            },
+        )
+
+    @app.post("/cover-letters/new", response_class=HTMLResponse)
+    async def build_cover_letter_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        ranking_file = str(form.get("ranking_file") or "").strip() or None
+        job_id = str(form.get("job_id") or "").strip() or None
+        draft_mode = str(form.get("draft_mode") or "").strip() or None
+        cv_path = str(form.get("cv_path") or "").strip()
+        base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
+        jobs_file = str(form.get("jobs_file") or "").strip()
+        output_path = str(form.get("output_path") or "").strip()
+        llm_model = str(form.get("llm_model") or "").strip() or None
+        llm_base_url = str(form.get("llm_base_url") or "").strip() or None
+        llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
+
+        try:
+            llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
+        except ValueError:
+            llm_timeout_seconds = None
+            return render(
+                request,
+                "build_cover_letter.html",
+                {
+                    "page_title": "Generate Cover Letter",
+                    "view": build_cover_letter_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        draft_mode=draft_mode,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error="LLM timeout must be a whole number of seconds.",
+                    ),
+                },
+            )
+
+        if not job_id or not cv_path or not jobs_file or not output_path:
+            return render(
+                request,
+                "build_cover_letter.html",
+                {
+                    "page_title": "Generate Cover Letter",
+                    "view": build_cover_letter_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        draft_mode=draft_mode,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error="Selected job, CV file, jobs file, and output path are all required.",
+                    ),
+                },
+            )
+
+        try:
+            result = run_cover_letter_build(
+                project_state,
+                draft_mode=draft_mode or "rule_based",
+                cv_path=cv_path,
+                base_cover_letter_path=base_cover_letter_path,
+                jobs_file=jobs_file,
+                job_id=job_id,
+                output_path=output_path,
+                llm_model=llm_model,
+                llm_base_url=llm_base_url,
+                llm_timeout_seconds=llm_timeout_seconds,
+            )
+        except (ValueError, ProfileValidationError, OllamaError) as exc:
+            return render(
+                request,
+                "build_cover_letter.html",
+                {
+                    "page_title": "Generate Cover Letter",
+                    "view": build_cover_letter_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        draft_mode=draft_mode,
+                        cv_path=cv_path,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file,
+                        output_path=output_path,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "build_cover_letter.html",
+            {
+                "page_title": "Generate Cover Letter",
+                "view": build_cover_letter_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                    draft_mode=draft_mode,
+                    cv_path=cv_path,
+                    base_cover_letter_path=base_cover_letter_path,
+                    jobs_file=jobs_file,
+                    output_path=output_path,
+                    llm_model=llm_model,
+                    llm_base_url=llm_base_url,
+                    llm_timeout_seconds=llm_timeout_seconds_raw,
+                    result=result,
+                ),
+            },
+        )
+
+    @app.post("/cover-letters/compare", response_class=HTMLResponse)
+    async def compare_cover_letters_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        ranking_file = str(form.get("ranking_file") or "").strip() or None
+        job_id = str(form.get("job_id") or "").strip() or None
+        cv_path = str(form.get("cv_path") or "").strip()
+        base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
+        jobs_file = str(form.get("jobs_file") or "").strip()
+        rule_based_output_path = str(form.get("rule_based_output_path") or "").strip()
+        llm_output_path = str(form.get("llm_output_path") or "").strip()
+        llm_model = str(form.get("llm_model") or "").strip() or None
+        llm_base_url = str(form.get("llm_base_url") or "").strip() or None
+        llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
+
+        try:
+            llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
+        except ValueError:
+            return render(
+                request,
+                "compare_cover_letters.html",
+                {
+                    "page_title": "Compare Drafts",
+                    "view": build_cover_letter_compare_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        rule_based_output_path=rule_based_output_path or None,
+                        llm_output_path=llm_output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error="LLM timeout must be a whole number of seconds.",
+                    ),
+                },
+            )
+
+        if not job_id or not cv_path or not jobs_file or not rule_based_output_path or not llm_output_path:
+            return render(
+                request,
+                "compare_cover_letters.html",
+                {
+                    "page_title": "Compare Drafts",
+                    "view": build_cover_letter_compare_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        rule_based_output_path=rule_based_output_path or None,
+                        llm_output_path=llm_output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error="Selected job, CV file, jobs file, and both output paths are required.",
+                    ),
+                },
+            )
+
+        try:
+            result = run_cover_letter_compare(
+                project_state,
+                cv_path=cv_path,
+                base_cover_letter_path=base_cover_letter_path,
+                jobs_file=jobs_file,
+                job_id=job_id,
+                rule_based_output_path=rule_based_output_path,
+                llm_output_path=llm_output_path,
+                llm_model=llm_model,
+                llm_base_url=llm_base_url,
+                llm_timeout_seconds=llm_timeout_seconds,
+            )
+        except (ValueError, ProfileValidationError, OllamaError) as exc:
+            return render(
+                request,
+                "compare_cover_letters.html",
+                {
+                    "page_title": "Compare Drafts",
+                    "view": build_cover_letter_compare_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file,
+                        rule_based_output_path=rule_based_output_path,
+                        llm_output_path=llm_output_path,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "compare_cover_letters.html",
+            {
+                "page_title": "Compare Drafts",
+                "view": build_cover_letter_compare_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                    cv_path=cv_path,
+                    base_cover_letter_path=base_cover_letter_path,
+                    jobs_file=jobs_file,
+                    rule_based_output_path=rule_based_output_path,
+                    llm_output_path=llm_output_path,
+                    llm_model=llm_model,
+                    llm_base_url=llm_base_url,
+                    llm_timeout_seconds=llm_timeout_seconds_raw,
                     result=result,
                 ),
             },

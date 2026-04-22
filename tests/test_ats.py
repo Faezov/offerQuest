@@ -54,6 +54,24 @@ Worked on reporting and dashboards.
         self.assertTrue(report["suggestions"])
         self.assertTrue(any("Core Skills" in suggestion for suggestion in report["suggestions"]))
 
+    def test_build_ats_report_marks_generic_job_text_as_low_signal(self) -> None:
+        generic_job_text = """Join our team.
+Great opportunity.
+Apply now.
+"""
+
+        report = build_ats_report(CV_TEXT, generic_job_text, cv_path="resume.txt")
+
+        self.assertFalse(report["keyword_coverage"]["has_signal"])
+        self.assertFalse(report["required_keywords"]["has_signal"])
+        self.assertEqual(report["keyword_coverage"]["total_count"], 0)
+        self.assertEqual(report["keyword_coverage"]["coverage_percent"], 0)
+        self.assertEqual(report["required_keywords"]["coverage_percent"], 0)
+        self.assertLess(report["ats_score"], 55)
+        self.assertTrue(
+            any("confident automated match" in suggestion for suggestion in report["suggestions"])
+        )
+
     def test_ats_check_job_record_keeps_job_context(self) -> None:
         job_record = {
             "id": "adzuna:123",

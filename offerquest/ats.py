@@ -162,6 +162,7 @@ def build_ats_report(
         "suggested_resume_title": suggest_resume_title(job_title, cv_profile),
         "fit_snapshot": fit_snapshot,
         "keyword_coverage": {
+            "has_signal": keyword_analysis["has_keyword_signal"],
             "coverage_percent": keyword_analysis["coverage_percent"],
             "matched_count": len(keyword_analysis["matched_keywords"]),
             "total_count": keyword_analysis["total_keywords"],
@@ -169,6 +170,7 @@ def build_ats_report(
             "missing_keywords": keyword_analysis["missing_keywords"],
         },
         "required_keywords": {
+            "has_signal": keyword_analysis["has_required_signal"],
             "coverage_percent": keyword_analysis["required_coverage_percent"],
             "matched": keyword_analysis["matched_required_keywords"],
             "missing": keyword_analysis["missing_required_keywords"],
@@ -220,6 +222,8 @@ def analyze_keyword_coverage(cv_text: str, job_text: str, *, job_title: str) -> 
 
     total_keywords = len(entries)
     total_required = len(required_entries)
+    has_keyword_signal = total_keywords > 0
+    has_required_signal = total_required > 0
 
     coverage_percent = ratio_as_percent(len(matched_keywords), total_keywords)
     required_coverage_percent = ratio_as_percent(
@@ -229,6 +233,8 @@ def analyze_keyword_coverage(cv_text: str, job_text: str, *, job_title: str) -> 
 
     return {
         "total_keywords": total_keywords,
+        "has_keyword_signal": has_keyword_signal,
+        "has_required_signal": has_required_signal,
         "coverage_percent": coverage_percent,
         "required_coverage_percent": required_coverage_percent,
         "matched_keywords": matched_keywords,
@@ -316,6 +322,17 @@ def build_ats_suggestions(
 
     missing_required = keyword_analysis["missing_required_keywords"]
     missing_keywords = keyword_analysis["missing_keywords"]
+    has_keyword_signal = keyword_analysis["has_keyword_signal"]
+    has_required_signal = keyword_analysis["has_required_signal"]
+
+    if not has_keyword_signal:
+        suggestions.append(
+            "The job description did not contain enough tracked ATS keywords for a confident automated match, so review this role manually."
+        )
+    elif not has_required_signal:
+        suggestions.append(
+            "No required keywords were confidently detected from the job text, so treat this ATS score as directional rather than definitive."
+        )
 
     if missing_required:
         suggestions.append(
@@ -369,7 +386,7 @@ def describe_ats_score(score: int) -> str:
 
 def ratio_as_percent(matches: int, total: int) -> int:
     if total == 0:
-        return 100
+        return 0
     return round((matches / total) * 100)
 
 

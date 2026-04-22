@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,7 +49,7 @@ class ProjectState:
     ) -> dict[str, Any]:
         self.ensure_directories()
         created_at = now_iso()
-        run_id = build_run_id(workflow, created_at=created_at, label=label)
+        run_id = self._next_run_id(workflow, created_at=created_at, label=label)
 
         manifest = {
             "id": run_id,
@@ -60,7 +61,7 @@ class ProjectState:
             "metadata": metadata or {},
         }
         manifest_path = self.runs_dir / f"{run_id}.json"
-        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        write_json_atomic(manifest_path, manifest)
         self._update_index(manifest)
         return manifest
 
@@ -107,7 +108,18 @@ class ProjectState:
                 *existing_runs,
             ],
         }
-        self.index_path.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
+        write_json_atomic(self.index_path, index_payload)
+
+    def _next_run_id(self, workflow: str, *, created_at: str, label: str | None = None) -> str:
+        base_run_id = build_run_id(workflow, created_at=created_at, label=label)
+        run_id = base_run_id
+        sequence = 2
+
+        while (self.runs_dir / f"{run_id}.json").exists():
+            run_id = f"{base_run_id}-{sequence}"
+            sequence += 1
+
+        return run_id
 
 
 def summarize_run(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -142,3 +154,26 @@ def slugify(value: str) -> str:
 
 def now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(json.dumps(payload, indent=2))
+            handle.flush()
+            temp_path = Path(handle.name)
+
+        temp_path.replace(path)
+    finally:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()

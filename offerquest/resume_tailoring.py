@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,30 @@ FOCUS_GUIDANCE = {
     "Finance": "Only mention finance directly if your experience clearly supports it.",
     "Automation": "Surface workflow automation, repeatability, or process improvement outcomes.",
 }
+
+ROLE_TITLE_FAMILIES = {
+    "analytics": ["analyst", "analytics", "reporting", "insights", "business intelligence", "bi"],
+    "metadata": ["metadata", "governance"],
+    "quality": ["quality", "validation", "integrity"],
+    "science": ["scientist", "machine learning"],
+    "engineering": ["engineer", "engineering", "pipeline", "warehousing", "infrastructure"],
+}
+
+TITLE_KEYWORDS = {"analyst", "analytics", "scientist", "engineer", "manager", "specialist"}
+IGNORED_LEADING_TITLE_TOKENS = {
+    "accomplished",
+    "driven",
+    "experienced",
+    "motivated",
+    "results",
+    "seasoned",
+}
+
+GENERIC_PROFILE_TITLES = [
+    ("Reporting", "Reporting Analyst"),
+    ("Metadata", "Metadata Analyst"),
+    ("Data quality", "Data Quality Analyst"),
+]
 
 
 def build_resume_tailoring_plan_for_job_record(
@@ -287,13 +312,34 @@ def build_priority_sections(
 
 def build_headline_plan(profile: dict[str, Any], ats_report: dict[str, Any]) -> dict[str, Any]:
     current_target = profile.get("target_role_from_cover_letter")
-    recommended = ats_report["suggested_resume_title"]
+    suggested_title = ats_report["suggested_resume_title"]
+    supported_titles = collect_supported_resume_titles(profile)
+    can_mirror_job_title = title_is_supported_by_profile(
+        suggested_title,
+        supported_titles=supported_titles,
+    )
+    recommended = suggested_title if can_mirror_job_title else choose_fallback_resume_title(
+        profile,
+        supported_titles=supported_titles,
+    )
+
+    if can_mirror_job_title:
+        reason = (
+            f"The job title `{suggested_title}` stays within the role family already supported by the current CV evidence."
+        )
+    else:
+        reason = (
+            f"The job title `{suggested_title}` looks like a stretch beyond the current CV evidence, so keep the headline grounded in `{recommended}`."
+        )
+
     return {
         "current_target": current_target,
+        "job_title_to_mirror": suggested_title,
+        "can_mirror_job_title": can_mirror_job_title,
         "recommended_title": recommended,
-        "reason": (
-            f"The job title `{recommended}` is the clearest ATS-aligned headline to mirror, as long as it remains truthful."
-        ),
+        "recommended_title_source": "job_title" if can_mirror_job_title else "profile_evidence",
+        "supported_profile_titles": supported_titles[:8],
+        "reason": reason,
     }
 
 
@@ -617,3 +663,158 @@ def read_optional_text(path: str | Path | None) -> str:
     if path is None:
         return ""
     return read_document_text(path)
+
+
+def collect_supported_resume_titles(profile: dict[str, Any]) -> list[str]:
+    supported: list[str] = []
+
+    summary = profile.get("summary")
+    if summary:
+        supported.extend(extract_title_candidates_from_summary(summary))
+
+    for role in profile.get("recent_roles", []):
+        title = str(role.get("title") or "").strip()
+        if title:
+            supported.append(title)
+
+    supported.extend(build_generic_profile_titles(profile))
+    return dedupe_preserve_order(supported)
+
+
+def extract_title_candidates_from_summary(summary: str) -> list[str]:
+    match = re.match(
+        r"\s*([A-Za-z][A-Za-z/&\-\s]{0,60}?(?:analyst|analytics|scientist|engineer|manager|specialist))\b",
+        summary,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return []
+
+    raw_title = normalize_role_title(match.group(1))
+    if not raw_title:
+        return []
+    return [raw_title]
+
+
+def build_generic_profile_titles(profile: dict[str, Any]) -> list[str]:
+    skills = set(profile.get("core_skills", []))
+    domains = set(profile.get("domains", []))
+    max_seniority_rank = infer_profile_seniority_rank(profile)
+    prefix = seniority_prefix_for_rank(max_seniority_rank)
+
+    titles = []
+    if skills.intersection({"SQL", "Python", "Reporting", "Data analysis"}):
+        titles.append(prefix + "Data Analyst")
+    for skill, title in GENERIC_PROFILE_TITLES:
+        if skill in skills:
+            titles.append(prefix + title)
+    if "Healthcare" in domains:
+        titles.append(prefix + "Health Data Analyst")
+    if "Research" in domains:
+        titles.append(prefix + "Research Data Analyst")
+    return titles
+
+
+def infer_profile_seniority_rank(profile: dict[str, Any]) -> int:
+    candidates: list[str] = []
+    summary = profile.get("summary")
+    if summary:
+        candidates.extend(extract_title_candidates_from_summary(summary))
+    candidates.extend(
+        str(role.get("title") or "").strip()
+        for role in profile.get("recent_roles", [])
+        if str(role.get("title") or "").strip()
+    )
+
+    if not candidates:
+        years_experience = profile.get("years_experience") or 0
+        return 3 if years_experience >= 8 else 2
+
+    return max(infer_title_seniority_rank(title) for title in candidates)
+
+
+def seniority_prefix_for_rank(rank: int) -> str:
+    if rank >= 5:
+        return "Principal "
+    if rank >= 4:
+        return "Lead "
+    if rank >= 3:
+        return "Senior "
+    return ""
+
+
+def title_is_supported_by_profile(candidate_title: str, *, supported_titles: list[str]) -> bool:
+    normalized_candidate = normalize_role_title(candidate_title)
+    normalized_supported = [normalize_role_title(title) for title in supported_titles if title]
+
+    if not normalized_candidate:
+        return False
+    if normalized_candidate in normalized_supported:
+        return True
+
+    candidate_family = infer_title_family(normalized_candidate)
+    if candidate_family is None:
+        return False
+
+    family_supported_titles = [
+        title
+        for title in normalized_supported
+        if infer_title_family(title) == candidate_family
+    ]
+    if not family_supported_titles:
+        return False
+
+    candidate_rank = infer_title_seniority_rank(normalized_candidate)
+    supported_rank = max(infer_title_seniority_rank(title) for title in family_supported_titles)
+    return candidate_rank <= supported_rank
+
+
+def choose_fallback_resume_title(profile: dict[str, Any], *, supported_titles: list[str]) -> str:
+    if supported_titles:
+        return supported_titles[0]
+
+    domains = set(profile.get("domains", []))
+    if "Healthcare" in domains:
+        return "Health Data Analyst"
+    if "Research" in domains:
+        return "Research Data Analyst"
+    return "Data Analyst"
+
+
+def infer_title_family(title: str) -> str | None:
+    lowered = title.lower()
+    for family, keywords in ROLE_TITLE_FAMILIES.items():
+        if any(keyword in lowered for keyword in keywords):
+            return family
+    return None
+
+
+def infer_title_seniority_rank(title: str) -> int:
+    lowered = title.lower()
+    if any(keyword in lowered for keyword in {"director", "head"}):
+        return 6
+    if any(keyword in lowered for keyword in {"manager"}):
+        return 5
+    if "principal" in lowered:
+        return 5
+    if "lead" in lowered:
+        return 4
+    if "senior" in lowered:
+        return 3
+    if any(keyword in lowered for keyword in {"junior", "associate", "assistant", "intern"}):
+        return 1
+    return 2
+
+
+def normalize_role_title(title: str) -> str:
+    tokens = re.findall(r"[A-Za-z]+", title)
+    if not tokens:
+        return ""
+
+    while tokens and tokens[0].lower() in IGNORED_LEADING_TITLE_TOKENS and len(tokens) > 1:
+        tokens = tokens[1:]
+
+    if not tokens or not any(token.lower() in TITLE_KEYWORDS for token in tokens):
+        return ""
+
+    return " ".join(token.upper() if token.isupper() else token.title() for token in tokens)

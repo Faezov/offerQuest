@@ -76,6 +76,23 @@ Experience with healthcare dashboards and metadata is highly regarded.
             draft["ats_before"]["ats_score"],
         )
 
+    def test_build_resume_tailored_draft_does_not_promote_unsupported_stretch_title(self) -> None:
+        stretch_job_text = """Principal Data Scientist
+Example Org, Sydney
+Seeking machine learning leadership and predictive modeling expertise.
+"""
+
+        draft = build_resume_tailored_draft(
+            CV_TEXT,
+            stretch_job_text,
+            cv_path="resume.txt",
+        )
+
+        self.assertEqual(draft["section_changes"]["headline_after"], "Senior Data Analyst")
+        self.assertNotIn("Principal Data Scientist\n", draft["tailored_cv_text"])
+        self.assertFalse(draft["plan"]["headline_plan"]["can_mirror_job_title"])
+        self.assertEqual(draft["plan"]["headline_plan"]["job_title_to_mirror"], "Principal Data Scientist")
+
 
 if __name__ == "__main__":
     unittest.main()

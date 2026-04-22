@@ -954,8 +954,16 @@ def suggest_docx_output_path(output_path: str | None) -> str:
 def resolve_workspace_input_path(project_state: ProjectState, raw_path: str) -> Path:
     path = Path(raw_path)
     if path.is_absolute():
-        return path
-    return (project_state.root / path).resolve()
+        resolved = path.resolve()
+    else:
+        resolved = (project_state.root / path).resolve()
+
+    try:
+        resolved.relative_to(project_state.root)
+    except ValueError as exc:
+        raise ValueError("Input path must stay inside the current workspace.") from exc
+
+    return resolved
 
 
 def resolve_workspace_output_path(project_state: ProjectState, raw_path: str) -> Path:

@@ -18,6 +18,7 @@ from offerquest.workbench import (
     build_resume_tailoring_form_view,
     build_run_detail_view,
     build_runs_view,
+    resolve_workspace_input_path,
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
@@ -145,6 +146,14 @@ class WorkbenchTests(unittest.TestCase):
             self.assertTrue(result.output_path.exists())
             self.assertEqual(result.profile["name"], "Jane Doe")
             self.assertEqual(result.run_manifest["workflow"], "build-profile")
+
+    def test_resolve_workspace_input_path_rejects_paths_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            state = ProjectState.from_root(root)
+
+            with self.assertRaisesRegex(ValueError, "Input path must stay inside the current workspace"):
+                resolve_workspace_input_path(state, "../outside.txt")
 
     def test_build_latest_rankings_view_uses_latest_ranking_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -13,8 +13,13 @@ from .cover_letter import (
     slugify,
     write_cover_letter,
 )
+from .docx import export_document_as_docx
 from .jobs import find_job_record, read_job_records
 from .profile import build_profile_from_files
+from .resume_tailoring import (
+    build_resume_tailored_draft_for_job_record,
+    build_resume_tailoring_plan_for_job_record,
+)
 from .workspace import ProjectState
 from .workspace import relative_to_root
 
@@ -62,6 +67,26 @@ class CoverLetterDraftArtifact:
 class CompareCoverLettersResult:
     rule_based: CoverLetterDraftArtifact
     llm: CoverLetterDraftArtifact
+    run_manifest: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class BuildResumeTailoringPlanResult:
+    plan: dict[str, Any]
+    output_path: Path
+    output_path_relative: str
+    run_manifest: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class BuildResumeTailoredDraftResult:
+    comparison: dict[str, Any]
+    output_path: Path
+    output_path_relative: str
+    analysis_output_path: Path
+    analysis_output_path_relative: str
+    docx_output_path: Path | None
+    docx_output_path_relative: str | None
     run_manifest: dict[str, Any]
 
 
@@ -270,6 +295,72 @@ def build_cover_letter_compare_view(
         "selected_llm_model": llm_model or "qwen3:8b",
         "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
         "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
+        "error": error,
+        "result": result,
+    }
+
+
+def build_resume_tailoring_form_view(
+    project_state: ProjectState,
+    *,
+    ranking_file: str | None = None,
+    job_id: str | None = None,
+    cv_path: str | None = None,
+    base_cover_letter_path: str | None = None,
+    jobs_file: str | None = None,
+    output_path: str | None = None,
+    error: str | None = None,
+    result: BuildResumeTailoringPlanResult | None = None,
+) -> dict[str, Any]:
+    selection = build_cover_letter_selection_context(
+        project_state,
+        ranking_file=ranking_file,
+        job_id=job_id,
+        cv_path=cv_path,
+        base_cover_letter_path=base_cover_letter_path,
+        jobs_file=jobs_file,
+    )
+    selected_job = selection["selected_job"]
+
+    return {
+        **selection,
+        "selected_output": output_path or suggest_resume_tailoring_output_path(selected_job),
+        "error": error,
+        "result": result,
+    }
+
+
+def build_resume_tailored_draft_form_view(
+    project_state: ProjectState,
+    *,
+    ranking_file: str | None = None,
+    job_id: str | None = None,
+    cv_path: str | None = None,
+    base_cover_letter_path: str | None = None,
+    jobs_file: str | None = None,
+    output_path: str | None = None,
+    export_docx: str | bool | None = None,
+    docx_output_path: str | None = None,
+    error: str | None = None,
+    result: BuildResumeTailoredDraftResult | None = None,
+) -> dict[str, Any]:
+    selection = build_cover_letter_selection_context(
+        project_state,
+        ranking_file=ranking_file,
+        job_id=job_id,
+        cv_path=cv_path,
+        base_cover_letter_path=base_cover_letter_path,
+        jobs_file=jobs_file,
+    )
+    selected_job = selection["selected_job"]
+    selected_output = output_path or suggest_resume_tailored_draft_output_path(selected_job)
+    selected_export_docx = normalize_boolean_toggle(export_docx, default=True)
+
+    return {
+        **selection,
+        "selected_output": selected_output,
+        "selected_export_docx": selected_export_docx,
+        "selected_docx_output": docx_output_path or suggest_docx_output_path(selected_output),
         "error": error,
         "result": result,
     }
@@ -528,6 +619,138 @@ def run_cover_letter_compare(
     )
 
 
+def run_resume_tailoring_plan_build(
+    project_state: ProjectState,
+    *,
+    cv_path: str,
+    base_cover_letter_path: str | None,
+    jobs_file: str,
+    job_id: str,
+    output_path: str,
+) -> BuildResumeTailoringPlanResult:
+    prepared = prepare_cover_letter_inputs(
+        project_state,
+        cv_path=cv_path,
+        base_cover_letter_path=base_cover_letter_path,
+        jobs_file=jobs_file,
+        job_id=job_id,
+    )
+    output_full_path = resolve_workspace_output_path(project_state, output_path)
+
+    plan = build_resume_tailoring_plan_for_job_record(
+        prepared["cv_full_path"],
+        prepared["job_record"],
+        cover_letter_path=prepared["base_cover_letter_full_path"],
+    )
+
+    output_full_path.parent.mkdir(parents=True, exist_ok=True)
+    output_full_path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
+
+    run_manifest = project_state.record_run(
+        "tailor-cv-plan",
+        artifacts=[{"kind": "resume_tailoring_plan", "path": output_full_path}],
+        metadata={
+            "job_id": plan.get("job_id"),
+            "job_title": plan.get("job_title"),
+            "company": plan.get("company"),
+            "job_url": plan.get("job_url"),
+            "ats_score_before": plan.get("ats_snapshot", {}).get("score_before"),
+        },
+        label=output_full_path.stem,
+    )
+
+    return BuildResumeTailoringPlanResult(
+        plan=plan,
+        output_path=output_full_path,
+        output_path_relative=str(relative_to_root(output_full_path, project_state.root)),
+        run_manifest=run_manifest,
+    )
+
+
+def run_resume_tailored_draft_build(
+    project_state: ProjectState,
+    *,
+    cv_path: str,
+    base_cover_letter_path: str | None,
+    jobs_file: str,
+    job_id: str,
+    output_path: str,
+    export_docx: bool = False,
+    docx_output_path: str | None = None,
+) -> BuildResumeTailoredDraftResult:
+    prepared = prepare_cover_letter_inputs(
+        project_state,
+        cv_path=cv_path,
+        base_cover_letter_path=base_cover_letter_path,
+        jobs_file=jobs_file,
+        job_id=job_id,
+    )
+    output_full_path = resolve_workspace_output_path(project_state, output_path)
+    analysis_output_path = output_full_path.parent / f"{output_full_path.stem}-analysis.json"
+    docx_output_full_path = (
+        resolve_workspace_output_path(project_state, docx_output_path)
+        if export_docx and docx_output_path
+        else output_full_path.with_suffix(".docx")
+        if export_docx
+        else None
+    )
+
+    if docx_output_full_path and docx_output_full_path == output_full_path:
+        raise ValueError("DOCX output path must be different from the text output path.")
+    if docx_output_full_path and docx_output_full_path == analysis_output_path:
+        raise ValueError("DOCX output path must be different from the analysis JSON path.")
+
+    comparison = build_resume_tailored_draft_for_job_record(
+        prepared["cv_full_path"],
+        prepared["job_record"],
+        cover_letter_path=prepared["base_cover_letter_full_path"],
+    )
+
+    output_full_path.parent.mkdir(parents=True, exist_ok=True)
+    output_full_path.write_text(comparison["tailored_cv_text"], encoding="utf-8")
+    analysis_output_path.write_text(json.dumps(comparison, indent=2), encoding="utf-8")
+    if docx_output_full_path:
+        export_document_as_docx(output_full_path, docx_output_full_path)
+
+    artifacts = [
+        {"kind": "tailored_resume", "path": output_full_path},
+        {"kind": "resume_tailoring_analysis", "path": analysis_output_path},
+    ]
+    if docx_output_full_path:
+        artifacts.append({"kind": "tailored_resume_docx", "path": docx_output_full_path})
+
+    run_manifest = project_state.record_run(
+        "tailor-cv-draft",
+        artifacts=artifacts,
+        metadata={
+            "job_id": comparison.get("job_id"),
+            "job_title": comparison.get("job_title"),
+            "company": comparison.get("company"),
+            "job_url": comparison.get("job_url"),
+            "ats_score_before": comparison.get("ats_before", {}).get("ats_score"),
+            "ats_score_after": comparison.get("ats_after", {}).get("ats_score"),
+            "ats_score_change": comparison.get("ats_delta", {}).get("score_change"),
+            "docx_output_path": str(relative_to_root(docx_output_full_path, project_state.root)) if docx_output_full_path else None,
+        },
+        label=output_full_path.stem,
+    )
+
+    return BuildResumeTailoredDraftResult(
+        comparison=comparison,
+        output_path=output_full_path,
+        output_path_relative=str(relative_to_root(output_full_path, project_state.root)),
+        analysis_output_path=analysis_output_path,
+        analysis_output_path_relative=str(relative_to_root(analysis_output_path, project_state.root)),
+        docx_output_path=docx_output_full_path,
+        docx_output_path_relative=(
+            str(relative_to_root(docx_output_full_path, project_state.root))
+            if docx_output_full_path
+            else None
+        ),
+        run_manifest=run_manifest,
+    )
+
+
 def enrich_artifact(project_state: ProjectState, artifact: dict[str, Any], *, index: int) -> dict[str, Any]:
     relative_path = artifact.get("path")
     absolute_path = project_state.resolve_artifact_path(relative_path) if relative_path else project_state.root
@@ -706,6 +929,28 @@ def suggest_cover_letter_output_path(selected_job: dict[str, Any] | None, *, dra
     return f"outputs/workbench/{company}-{title}{suffix}.txt"
 
 
+def suggest_resume_tailoring_output_path(selected_job: dict[str, Any] | None) -> str:
+    if not selected_job:
+        return "outputs/workbench/resume-tailoring-plan.json"
+    company = slugify(selected_job.get("company") or "company")
+    title = slugify(selected_job.get("job_title") or "job")
+    return f"outputs/workbench/{company}-{title}-resume-plan.json"
+
+
+def suggest_resume_tailored_draft_output_path(selected_job: dict[str, Any] | None) -> str:
+    if not selected_job:
+        return "outputs/workbench/tailored-resume.txt"
+    company = slugify(selected_job.get("company") or "company")
+    title = slugify(selected_job.get("job_title") or "job")
+    return f"outputs/workbench/{company}-{title}-tailored-resume.txt"
+
+
+def suggest_docx_output_path(output_path: str | None) -> str:
+    if not output_path:
+        return "outputs/workbench/tailored-resume.docx"
+    return str(Path(output_path).with_suffix(".docx"))
+
+
 def resolve_workspace_input_path(project_state: ProjectState, raw_path: str) -> Path:
     path = Path(raw_path)
     if path.is_absolute():
@@ -879,3 +1124,11 @@ def normalize_draft_mode(draft_mode: str | None) -> str:
     if draft_mode == "llm":
         return "llm"
     return "rule_based"
+
+
+def normalize_boolean_toggle(value: str | bool | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return value.lower() not in {"", "0", "false", "off", "no"}

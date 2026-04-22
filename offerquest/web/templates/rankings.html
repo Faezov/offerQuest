@@ -69,6 +69,8 @@
             <span class="score-pill">{{ item.score }}</span>
             <div class="ranking-table__links">
               {% if item.job_id %}
+                <a href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}">Tailor CV</a>
+                <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}">CV Draft</a>
                 <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based">Generate Draft</a>
                 <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm">Generate LLM Draft</a>
                 <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}">Compare Drafts</a>

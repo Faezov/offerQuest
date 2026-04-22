@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Build Tailored CV Draft</h2>
+        <p>Generate a plain-text tailored resume draft for a selected ranked job and compare it against the current CV.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if not view.has_rankings %}
+        <div class="empty-state">
+          <h3>No ranking data available</h3>
+          <p>Run job ranking first so the workbench has a selected job to tailor against.</p>
+        </div>
+      {% elif not view.selected_job %}
+        <div class="empty-state">
+          <h3>No job selected</h3>
+          <p>Open this page from the tailoring plan view or pass a valid ranked job id.</p>
+        </div>
+      {% elif not view.has_documents %}
+        <div class="empty-state">
+          <h3>No candidate documents found</h3>
+          <p>Add your CV and optional base cover letter under <code>data/</code> first.</p>
+        </div>
+      {% elif not view.has_jobs_files %}
+        <div class="empty-state">
+          <h3>No jobs files found</h3>
+          <p>Import or fetch jobs into <code>outputs/</code> first so the selected ranking can be resolved back to a full job record.</p>
+        </div>
+      {% else %}
+        <form method="post" class="form-stack">
+          <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
+          <input type="hidden" name="job_id" value="{{ view.selected_job.job_id or '' }}">
+
+          <div class="callout">
+            <p><strong>Selected job:</strong> {{ view.selected_job.job_title }} at {{ view.selected_job.company }}</p>
+            <p><strong>Location:</strong> {{ view.selected_job.location or "Unknown" }}</p>
+            <p><strong>Score:</strong> {{ view.selected_job.score }}</p>
+          </div>
+
+          <label class="field">
+            <span>CV file</span>
+            <select name="cv_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Base cover letter file</span>
+            <select name="base_cover_letter_path">
+              <option value="">None</option>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Jobs file</span>
+            <select name="jobs_file" required>
+              {% for item in view.jobs_files %}
+                <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
+                  {{ item.relative_path }} ({{ item.record_count }} records)
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Output text path</span>
+            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+          </label>
+
+          <label class="field field--checkbox">
+            <span class="field__checkbox">
+              <input type="checkbox" name="export_docx" {% if view.selected_export_docx %}checked{% endif %}>
+              <span>Also export ATS-safe DOCX</span>
+            </span>
+          </label>
+
+          <label class="field">
+            <span>Output DOCX path</span>
+            <input type="text" name="docx_output_path" value="{{ view.selected_docx_output }}">
+          </label>
+
+          <button class="primary-button" type="submit">Build Tailored Draft</button>
+        </form>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>What This Phase Does</h2>
+        <p>This creates a concrete draft, not just a plan.</p>
+      </div>
+      <ol class="step-list">
+        <li>Rewrites the top of the resume using the phase-1 tailoring logic.</li>
+        <li>Reorders visible skills and adds only safe keywords already supported by the candidate documents.</li>
+        <li>Shows ATS before and after, then saves the tailored text plus a comparison JSON artifact.</li>
+        <li>Optionally exports a plain ATS-safe <code>.docx</code> version from the same draft.</li>
+      </ol>
+    </article>
+  </section>
+
+  {% if view.result %}
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Tailored Draft Ready</h2>
+        <p>
+          Saved draft to <code>{{ view.result.output_path_relative }}</code> and analysis to <code>{{ view.result.analysis_output_path_relative }}</code>.
+          {% if view.result.docx_output_path_relative %}
+            DOCX export: <code>{{ view.result.docx_output_path_relative }}</code>.
+          {% endif %}
+          <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+        </p>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Role</dt>
+          <dd>{{ view.result.comparison.job_title }}</dd>
+        </div>
+        <div>
+          <dt>Company</dt>
+          <dd>{{ view.result.comparison.company or "Unknown company" }}</dd>
+        </div>
+        <div>
+          <dt>ATS Before</dt>
+          <dd>{{ view.result.comparison.ats_before.ats_score }}</dd>
+        </div>
+        <div>
+          <dt>ATS After</dt>
+          <dd>{{ view.result.comparison.ats_after.ats_score }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="compare-card-grid">
+      <article class="panel compare-card">
+        <div class="panel__header">
+          <h2>ATS Delta</h2>
+          <p>How the tailored draft changed the current resume snapshot.</p>
+        </div>
+        <dl class="detail-grid">
+          <div>
+            <dt>Score Change</dt>
+            <dd>{{ view.result.comparison.ats_delta.score_change }}</dd>
+          </div>
+          <div>
+            <dt>Assessment</dt>
+            <dd>{{ view.result.comparison.ats_after.assessment }}</dd>
+          </div>
+        </dl>
+        {% if view.result.comparison.ats_delta.gained_keywords %}
+          <div class="callout">
+            <p><strong>Newly matched keywords:</strong> {{ view.result.comparison.ats_delta.gained_keywords | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.comparison.ats_delta.remaining_missing_keywords %}
+          <div class="callout">
+            <p><strong>Still missing:</strong> {{ view.result.comparison.ats_delta.remaining_missing_keywords | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <article class="panel compare-card compare-card--llm">
+        <div class="panel__header">
+          <h2>Section Changes</h2>
+          <p>The most important content changes applied to the draft.</p>
+        </div>
+        <div class="callout">
+          <p><strong>Headline:</strong> {{ view.result.comparison.section_changes.headline_after }}</p>
+        </div>
+        {% if view.result.comparison.section_changes.skills_added_from_candidate_docs %}
+          <div class="callout">
+            <p><strong>Added from candidate documents:</strong> {{ view.result.comparison.section_changes.skills_added_from_candidate_docs | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Summary Rewrite</h2>
+        </div>
+        {% if view.result.comparison.section_changes.summary_before %}
+          <div class="callout">
+            <p><strong>Before:</strong> {{ view.result.comparison.section_changes.summary_before }}</p>
+          </div>
+        {% endif %}
+        <div class="callout">
+          <p><strong>After:</strong> {{ view.result.comparison.section_changes.summary_after }}</p>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Skills Reordered</h2>
+        </div>
+        {% if view.result.comparison.section_changes.skills_before %}
+          <p class="inline-note">Before</p>
+          <ul class="token-list">
+            {% for skill in view.result.comparison.section_changes.skills_before %}
+              <li>{{ skill }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        <p class="inline-note">After</p>
+        <ul class="token-list">
+          {% for skill in view.result.comparison.section_changes.skills_after %}
+            <li>{{ skill }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+
+    <section class="compare-drafts">
+      <article class="panel compare-drafts__panel">
+        <div class="panel__header">
+          <h2>Original CV Text</h2>
+        </div>
+        <pre class="code-preview"><code>{{ view.result.comparison.original_cv_text }}</code></pre>
+      </article>
+
+      <article class="panel compare-drafts__panel">
+        <div class="panel__header">
+          <h2>Tailored CV Draft</h2>
+        </div>
+        <pre class="code-preview"><code>{{ view.result.comparison.tailored_cv_text }}</code></pre>
+      </article>
+    </section>
+  {% endif %}
+{% endblock %}

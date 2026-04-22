@@ -32,6 +32,14 @@ python3 -m offerquest build-profile \
   --output outputs/bulat-profile.json
 ```
 
+Export a cleaner ATS-friendly `.docx`:
+
+```bash
+python3 -m offerquest export-docx \
+  --input data/CV_BF_20260415.doc \
+  --output data/CV_BF_20260415.docx
+```
+
 Score one job description:
 
 ```bash
@@ -125,6 +133,7 @@ python3 -m offerquest rank-jobs \
 ## Supported Inputs
 
 - Plain text: `.txt`, `.md`
+- Microsoft Word `.docx`
 - OpenDocument text files, including misnamed `.doc` files that are actually zipped ODT documents
 - Legacy Microsoft Word `.doc` files through a local `strings` fallback
 - Normalized job-record files: `.json`, `.jsonl`

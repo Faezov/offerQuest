@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .ats import ats_check_job_file, ats_check_job_record
+from .docx import export_document_as_docx
 from .jobs import (
     collect_job_record_inputs,
     fetch_adzuna_jobs,
@@ -18,7 +19,7 @@ from .jobs import (
 from .profile import build_profile_from_files
 from .scoring import rank_job_files, rank_job_records, score_job_file
 
-SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".odt"}
+SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +32,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_profile_source_arguments(build_profile_parser)
     build_profile_parser.add_argument("--output", type=Path, help="Write profile JSON to this path")
+
+    export_docx_parser = subparsers.add_parser(
+        "export-docx",
+        help="Export a supported document as a simple ATS-friendly .docx file",
+    )
+    export_docx_parser.add_argument("--input", type=Path, required=True, help="Input document file")
+    export_docx_parser.add_argument("--output", type=Path, required=True, help="Output .docx path")
 
     score_job_parser = subparsers.add_parser(
         "score-job",
@@ -126,6 +134,19 @@ def main() -> int:
         profile = build_profile_from_files(args.cv, args.cover_letter)
         write_optional_json(args.output, profile)
         print(json.dumps(profile, indent=2))
+        return 0
+
+    if args.command == "export-docx":
+        export_document_as_docx(args.input, args.output)
+        print(
+            json.dumps(
+                {
+                    "source": str(args.input),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
         return 0
 
     if args.command == "ats-check":

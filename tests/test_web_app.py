@@ -44,6 +44,73 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Build Candidate Profile", response.text)
 
+    def test_resume_tailoring_page_renders(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            outputs_dir = root / "outputs"
+            jobs_dir = outputs_dir / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (data_dir / "CV_sample.txt").write_text("cv", encoding="utf-8")
+            (data_dir / "CL_sample.txt").write_text("cl", encoding="utf-8")
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "SQL reporting role"}\n',
+                encoding="utf-8",
+            )
+            (outputs_dir / "job-ranking.json").write_text(
+                '{"job_count": 1, "rankings": [{"job_id": "job-1", "job_title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "score": 95}]}',
+                encoding="utf-8",
+            )
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            response = client.get("/cv-tailoring/new?job_id=job-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Build CV Tailoring Plan", response.text)
+
+    def test_resume_tailored_draft_page_renders(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            outputs_dir = root / "outputs"
+            jobs_dir = outputs_dir / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (data_dir / "CV_sample.txt").write_text("cv", encoding="utf-8")
+            (data_dir / "CL_sample.txt").write_text("cl", encoding="utf-8")
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "SQL reporting role"}\n',
+                encoding="utf-8",
+            )
+            (outputs_dir / "job-ranking.json").write_text(
+                '{"job_count": 1, "rankings": [{"job_id": "job-1", "job_title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "score": 95}]}',
+                encoding="utf-8",
+            )
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            response = client.get("/cv-tailoring/draft/new?job_id=job-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Build Tailored CV Draft", response.text)
+        self.assertIn("Also export ATS-safe DOCX", response.text)
+
     def test_rankings_page_renders(self) -> None:
         try:
             from fastapi.testclient import TestClient

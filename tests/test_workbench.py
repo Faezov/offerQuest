@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from offerquest.extractors import read_document_text
 from offerquest.workbench import (
     build_artifact_preview,
     build_cover_letter_compare_view,
@@ -13,11 +14,15 @@ from offerquest.workbench import (
     build_dashboard_view,
     build_latest_rankings_view,
     build_profile_form_view,
+    build_resume_tailored_draft_form_view,
+    build_resume_tailoring_form_view,
     build_run_detail_view,
     build_runs_view,
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
+    run_resume_tailored_draft_build,
+    run_resume_tailoring_plan_build,
 )
 from offerquest.workspace import ProjectState
 
@@ -243,6 +248,58 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual(view["selected_llm_output"], "outputs/workbench/example-org-senior-data-analyst-llm.txt")
         self.assertEqual(view["selected_llm_model"], "qwen3:8b")
 
+    def test_build_resume_tailoring_form_view_prefills_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            outputs_dir = root / "outputs"
+            jobs_dir = outputs_dir / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (data_dir / "CV_sample.txt").write_text("cv", encoding="utf-8")
+            (data_dir / "CL_sample.txt").write_text("cl", encoding="utf-8")
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "SQL reporting role"}\n',
+                encoding="utf-8",
+            )
+            (outputs_dir / "job-ranking.json").write_text(
+                '{"job_count": 1, "rankings": [{"job_id": "job-1", "job_title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "score": 95}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            view = build_resume_tailoring_form_view(state, job_id="job-1")
+
+        self.assertEqual(view["selected_output"], "outputs/workbench/example-org-senior-data-analyst-resume-plan.json")
+        self.assertEqual(view["selected_jobs_file"], "outputs/jobs/all.jsonl")
+
+    def test_build_resume_tailored_draft_form_view_prefills_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            outputs_dir = root / "outputs"
+            jobs_dir = outputs_dir / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (data_dir / "CV_sample.txt").write_text("cv", encoding="utf-8")
+            (data_dir / "CL_sample.txt").write_text("cl", encoding="utf-8")
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "SQL reporting role"}\n',
+                encoding="utf-8",
+            )
+            (outputs_dir / "job-ranking.json").write_text(
+                '{"job_count": 1, "rankings": [{"job_id": "job-1", "job_title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "score": 95}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            view = build_resume_tailored_draft_form_view(state, job_id="job-1")
+
+        self.assertEqual(view["selected_output"], "outputs/workbench/example-org-senior-data-analyst-tailored-resume.txt")
+        self.assertEqual(view["selected_jobs_file"], "outputs/jobs/all.jsonl")
+        self.assertTrue(view["selected_export_docx"])
+        self.assertEqual(view["selected_docx_output"], "outputs/workbench/example-org-senior-data-analyst-tailored-resume.docx")
+
     def test_run_cover_letter_build_writes_output_and_records_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -458,6 +515,85 @@ class WorkbenchTests(unittest.TestCase):
                     rule_based_output_path="outputs/workbench/shared.txt",
                     llm_output_path="outputs/workbench/shared.txt",
                 )
+
+    def test_run_resume_tailoring_plan_build_writes_output_and_records_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            jobs_dir = root / "outputs" / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+
+            (data_dir / "CV_sample.txt").write_text(
+                "Jane Doe\nMelbourne, VIC, Australia\njane@example.com\nProfessional Summary\nSenior data analyst with SQL, Python, reporting, and metadata experience.\nCore Skills\nSQL\nPython\nReporting\nMetadata\nProfessional Experience\nExample Org\nSenior Reporting Analyst | 2025\nBuilt reporting workflows.\n",
+                encoding="utf-8",
+            )
+            (data_dir / "CL_sample.txt").write_text(
+                "Dear Hiring Team,\nI am writing to apply for the position of Senior Data Analyst.\nJane Doe\n",
+                encoding="utf-8",
+            )
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "Senior Data Analyst\\nExample Org, Sydney\\nRequired skills: SQL, Python, Power BI, reporting.\\n", "url": "https://example.com/job-1"}\n',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            result = run_resume_tailoring_plan_build(
+                state,
+                cv_path="data/CV_sample.txt",
+                base_cover_letter_path="data/CL_sample.txt",
+                jobs_file="outputs/jobs/all.jsonl",
+                job_id="job-1",
+                output_path="outputs/workbench/example-org-senior-data-analyst-resume-plan.json",
+            )
+
+            self.assertTrue(result.output_path.exists())
+            self.assertEqual(result.run_manifest["workflow"], "tailor-cv-plan")
+            self.assertEqual(result.plan["job_id"], "job-1")
+            self.assertIn("Power BI", result.plan["keyword_plan"]["missing_keywords"])
+
+    def test_run_resume_tailored_draft_build_writes_output_and_records_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            jobs_dir = root / "outputs" / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+
+            (data_dir / "CV_sample.txt").write_text(
+                "Jane Doe\nMelbourne, VIC, Australia\njane@example.com\nProfessional Summary\nSenior data analyst with SQL, Python, reporting, and metadata experience.\nCore Skills\nSQL\nPython\nReporting\nMetadata\nProfessional Experience\nExample Org\nSenior Reporting Analyst | 2025\nBuilt reporting workflows.\n",
+                encoding="utf-8",
+            )
+            (data_dir / "CL_sample.txt").write_text(
+                "Dear Hiring Team,\nI am writing to apply for the position of Senior Data Analyst.\nI have also supported automation work in analyst environments.\nJane Doe\n",
+                encoding="utf-8",
+            )
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "Senior Data Analyst\\nExample Org, Sydney\\nRequired skills: SQL, Python, reporting, automation.\\n", "url": "https://example.com/job-1"}\n',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            result = run_resume_tailored_draft_build(
+                state,
+                cv_path="data/CV_sample.txt",
+                base_cover_letter_path="data/CL_sample.txt",
+                jobs_file="outputs/jobs/all.jsonl",
+                job_id="job-1",
+                output_path="outputs/workbench/example-org-senior-data-analyst-tailored-resume.txt",
+                export_docx=True,
+                docx_output_path="outputs/workbench/example-org-senior-data-analyst-tailored-resume.docx",
+            )
+
+            self.assertTrue(result.output_path.exists())
+            self.assertTrue(result.analysis_output_path.exists())
+            self.assertIsNotNone(result.docx_output_path)
+            self.assertTrue(result.docx_output_path.exists())
+            self.assertEqual(result.run_manifest["workflow"], "tailor-cv-draft")
+            self.assertEqual(len(result.run_manifest["artifacts"]), 3)
+            self.assertIn("Automation", result.comparison["section_changes"]["skills_after"])
+            self.assertIn("Senior Data Analyst", result.output_path.read_text(encoding="utf-8"))
+            self.assertIn("Senior Data Analyst", read_document_text(result.docx_output_path))
 
 
 if __name__ == "__main__":

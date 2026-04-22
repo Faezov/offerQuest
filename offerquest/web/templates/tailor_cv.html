@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Build CV Tailoring Plan</h2>
+        <p>Create a factual, section-level tailoring plan for a selected ranked job without rewriting the full resume yet.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if not view.has_rankings %}
+        <div class="empty-state">
+          <h3>No ranking data available</h3>
+          <p>Run job ranking first so the workbench has a selected job to tailor against.</p>
+        </div>
+      {% elif not view.selected_job %}
+        <div class="empty-state">
+          <h3>No job selected</h3>
+          <p>Open this page from the rankings view or pass a valid ranked job id.</p>
+        </div>
+      {% elif not view.has_documents %}
+        <div class="empty-state">
+          <h3>No candidate documents found</h3>
+          <p>Add your CV and optional base cover letter under <code>data/</code> first.</p>
+        </div>
+      {% elif not view.has_jobs_files %}
+        <div class="empty-state">
+          <h3>No jobs files found</h3>
+          <p>Import or fetch jobs into <code>outputs/</code> first so the selected ranking can be resolved back to a full job record.</p>
+        </div>
+      {% else %}
+        <form method="post" class="form-stack">
+          <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
+          <input type="hidden" name="job_id" value="{{ view.selected_job.job_id or '' }}">
+
+          <div class="callout">
+            <p><strong>Selected job:</strong> {{ view.selected_job.job_title }} at {{ view.selected_job.company }}</p>
+            <p><strong>Location:</strong> {{ view.selected_job.location or "Unknown" }}</p>
+            <p><strong>Score:</strong> {{ view.selected_job.score }}</p>
+          </div>
+
+          <label class="field">
+            <span>CV file</span>
+            <select name="cv_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Base cover letter file</span>
+            <select name="base_cover_letter_path">
+              <option value="">None</option>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Jobs file</span>
+            <select name="jobs_file" required>
+              {% for item in view.jobs_files %}
+                <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
+                  {{ item.relative_path }} ({{ item.record_count }} records)
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Output JSON path</span>
+            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+          </label>
+
+          <button class="primary-button" type="submit">Build Tailoring Plan</button>
+        </form>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>What This Phase Does</h2>
+        <p>This is a planning pass, not a full resume rewrite.</p>
+      </div>
+      <ol class="step-list">
+        <li>Measures current ATS alignment against the selected job.</li>
+        <li>Identifies the sections that deserve updates first.</li>
+        <li>Suggests summary, skills, and experience emphasis while keeping claims grounded in existing evidence.</li>
+      </ol>
+    </article>
+  </section>
+
+  {% if view.result %}
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Tailoring Plan Ready</h2>
+        <p>
+          Saved to <code>{{ view.result.output_path_relative }}</code>.
+          <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+        </p>
+        <p>
+          <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.selected_job.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Generate a tailored draft from this plan</a>
+        </p>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Role</dt>
+          <dd>{{ view.result.plan.job_title }}</dd>
+        </div>
+        <div>
+          <dt>Company</dt>
+          <dd>{{ view.result.plan.company or "Unknown company" }}</dd>
+        </div>
+        <div>
+          <dt>ATS Score Before</dt>
+          <dd>{{ view.result.plan.ats_snapshot.score_before }}</dd>
+        </div>
+        <div>
+          <dt>Assessment</dt>
+          <dd>{{ view.result.plan.ats_snapshot.assessment }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Priority Sections</h2>
+        </div>
+        <div class="advice-stack">
+          {% for item in view.result.plan.sections_to_update_first %}
+            <div class="advice-card">
+              <p class="advice-card__eyebrow">{{ item.priority }}</p>
+              <h3>{{ item.section }}</h3>
+              <p>{{ item.reason }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Keyword Direction</h2>
+        </div>
+        <p class="inline-note">Keep visible:</p>
+        <ul class="token-list">
+          {% for keyword in view.result.plan.keyword_plan.focus_keywords %}
+            <li>{{ keyword }}</li>
+          {% endfor %}
+        </ul>
+        {% if view.result.plan.keyword_plan.missing_keywords %}
+          <div class="callout">
+            <p><strong>Add only if true:</strong> {{ view.result.plan.keyword_plan.missing_keywords | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Headline And Summary</h2>
+        </div>
+        <dl class="detail-grid">
+          <div>
+            <dt>Recommended Headline</dt>
+            <dd>{{ view.result.plan.headline_plan.recommended_title }}</dd>
+          </div>
+          <div>
+            <dt>Current Target</dt>
+            <dd>{{ view.result.plan.headline_plan.current_target or "Not detected" }}</dd>
+          </div>
+        </dl>
+        <div class="callout">
+          <p>{{ view.result.plan.headline_plan.reason }}</p>
+        </div>
+        {% if view.result.plan.summary_plan.current_summary %}
+          <div class="callout">
+            <p><strong>Current summary:</strong> {{ view.result.plan.summary_plan.current_summary }}</p>
+          </div>
+        {% endif %}
+        <ul class="step-list">
+          {% for item in view.result.plan.summary_plan.guidance %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Skills Plan</h2>
+        </div>
+        {% if view.result.plan.skills_plan.skills_to_keep_visible %}
+          <p class="inline-note">Keep near the top:</p>
+          <ul class="token-list">
+            {% for skill in view.result.plan.skills_plan.skills_to_keep_visible %}
+              <li>{{ skill }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if view.result.plan.skills_plan.skills_to_add_if_true %}
+          <div class="callout">
+            <p><strong>Add if true:</strong> {{ view.result.plan.skills_plan.skills_to_add_if_true | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.plan.skills_plan.skills_to_deprioritize %}
+          <div class="callout">
+            <p><strong>Lower priority for this role:</strong> {{ view.result.plan.skills_plan.skills_to_deprioritize | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Experience Plan</h2>
+        </div>
+        {% if view.result.plan.experience_plan.roles_to_surface %}
+          <p class="inline-note">Roles to surface first:</p>
+          <ul class="token-list">
+            {% for role in view.result.plan.experience_plan.roles_to_surface %}
+              <li>{{ role }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        <ul class="step-list">
+          {% for item in view.result.plan.experience_plan.bullet_focus %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Evidence To Reuse</h2>
+        </div>
+        <ul class="step-list">
+          {% for item in view.result.plan.experience_plan.evidence_to_reuse %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>ATS Structure Notes</h2>
+        </div>
+        {% if view.result.plan.format_plan.missing_sections %}
+          <div class="callout">
+            <p><strong>Missing sections:</strong> {{ view.result.plan.format_plan.missing_sections | join(", ") }}</p>
+          </div>
+        {% endif %}
+        {% if view.result.plan.format_plan.format_risks %}
+          <ul class="warning-list">
+            {% for item in view.result.plan.format_plan.format_risks %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if view.result.plan.format_plan.ats_suggestions %}
+          <ul class="step-list">
+            {% for item in view.result.plan.format_plan.ats_suggestions %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Truthfulness Guardrails</h2>
+        </div>
+        <ul class="warning-list">
+          {% for item in view.result.plan.truthfulness_notes %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+        {% if view.result.plan.profile_quality_warnings %}
+          <div class="callout">
+            <p><strong>Profile quality warnings:</strong> {{ view.result.plan.profile_quality_warnings | join(", ") }}</p>
+          </div>
+        {% endif %}
+      </article>
+    </section>
+  {% endif %}
+{% endblock %}

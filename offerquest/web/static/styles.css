@@ -274,6 +274,11 @@ h1 {
   margin: 0;
 }
 
+.inline-note {
+  margin: 0 0 0.8rem 0;
+  color: var(--muted);
+}
+
 .artifact-table {
   display: grid;
   gap: 0.8rem;
@@ -386,6 +391,35 @@ h1 {
   background: rgba(254, 242, 242, 0.82);
 }
 
+.advice-stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.advice-card {
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.advice-card h3 {
+  margin: 0.15rem 0 0.35rem 0;
+}
+
+.advice-card p {
+  margin: 0;
+}
+
+.advice-card__eyebrow {
+  margin: 0;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .form-stack {
   display: grid;
   gap: 1rem;
@@ -414,6 +448,17 @@ h1 {
   font-weight: 700;
 }
 
+.field--checkbox {
+  gap: 0;
+}
+
+.field__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-weight: 700;
+}
+
 .field input,
 .field select {
   width: 100%;
@@ -423,6 +468,12 @@ h1 {
   background: rgba(255, 255, 255, 0.82);
   color: var(--ink);
   font: inherit;
+}
+
+.field__checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
 }
 
 .primary-button {

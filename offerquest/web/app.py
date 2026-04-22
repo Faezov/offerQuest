@@ -13,11 +13,15 @@ from ..workbench import (
     build_dashboard_view,
     build_latest_rankings_view,
     build_profile_form_view,
+    build_resume_tailored_draft_form_view,
+    build_resume_tailoring_form_view,
     build_run_detail_view,
     build_runs_view,
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
+    run_resume_tailored_draft_build,
+    run_resume_tailoring_plan_build,
 )
 
 
@@ -97,6 +101,44 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
             {
                 "page_title": "Build Profile",
                 "view": build_profile_form_view(project_state),
+            },
+        )
+
+    @app.get("/cv-tailoring/new", response_class=HTMLResponse)
+    async def build_resume_tailoring_page(
+        request: Request,
+        ranking_file: str | None = None,
+        job_id: str | None = None,
+    ) -> HTMLResponse:
+        return render(
+            request,
+            "tailor_cv.html",
+            {
+                "page_title": "Tailor CV",
+                "view": build_resume_tailoring_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                ),
+            },
+        )
+
+    @app.get("/cv-tailoring/draft/new", response_class=HTMLResponse)
+    async def build_resume_tailored_draft_page(
+        request: Request,
+        ranking_file: str | None = None,
+        job_id: str | None = None,
+    ) -> HTMLResponse:
+        return render(
+            request,
+            "tailor_cv_draft.html",
+            {
+                "page_title": "Tailored CV Draft",
+                "view": build_resume_tailored_draft_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                ),
             },
         )
 
@@ -196,6 +238,166 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
                     cv_path=cv_path,
                     cover_letter_path=cover_letter_path,
                     output_path=output_path,
+                    result=result,
+                ),
+            },
+        )
+
+    @app.post("/cv-tailoring/new", response_class=HTMLResponse)
+    async def build_resume_tailoring_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        ranking_file = str(form.get("ranking_file") or "").strip() or None
+        job_id = str(form.get("job_id") or "").strip() or None
+        cv_path = str(form.get("cv_path") or "").strip()
+        base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
+        jobs_file = str(form.get("jobs_file") or "").strip()
+        output_path = str(form.get("output_path") or "").strip()
+
+        if not job_id or not cv_path or not jobs_file or not output_path:
+            return render(
+                request,
+                "tailor_cv.html",
+                {
+                    "page_title": "Tailor CV",
+                    "view": build_resume_tailoring_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        error="Selected job, CV file, jobs file, and output path are all required.",
+                    ),
+                },
+            )
+
+        try:
+            result = run_resume_tailoring_plan_build(
+                project_state,
+                cv_path=cv_path,
+                base_cover_letter_path=base_cover_letter_path,
+                jobs_file=jobs_file,
+                job_id=job_id,
+                output_path=output_path,
+            )
+        except (ValueError, ProfileValidationError) as exc:
+            return render(
+                request,
+                "tailor_cv.html",
+                {
+                    "page_title": "Tailor CV",
+                    "view": build_resume_tailoring_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file,
+                        output_path=output_path,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "tailor_cv.html",
+            {
+                "page_title": "Tailor CV",
+                "view": build_resume_tailoring_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                    cv_path=cv_path,
+                    base_cover_letter_path=base_cover_letter_path,
+                    jobs_file=jobs_file,
+                    output_path=output_path,
+                    result=result,
+                ),
+            },
+        )
+
+    @app.post("/cv-tailoring/draft/new", response_class=HTMLResponse)
+    async def build_resume_tailored_draft_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        ranking_file = str(form.get("ranking_file") or "").strip() or None
+        job_id = str(form.get("job_id") or "").strip() or None
+        cv_path = str(form.get("cv_path") or "").strip()
+        base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
+        jobs_file = str(form.get("jobs_file") or "").strip()
+        output_path = str(form.get("output_path") or "").strip()
+        export_docx = bool(form.get("export_docx"))
+        docx_output_path = str(form.get("docx_output_path") or "").strip() or None
+
+        if not job_id or not cv_path or not jobs_file or not output_path:
+            return render(
+                request,
+                "tailor_cv_draft.html",
+                {
+                    "page_title": "Tailored CV Draft",
+                    "view": build_resume_tailored_draft_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        export_docx=export_docx,
+                        docx_output_path=docx_output_path,
+                        error="Selected job, CV file, jobs file, and output path are all required.",
+                    ),
+                },
+            )
+
+        try:
+            result = run_resume_tailored_draft_build(
+                project_state,
+                cv_path=cv_path,
+                base_cover_letter_path=base_cover_letter_path,
+                jobs_file=jobs_file,
+                job_id=job_id,
+                output_path=output_path,
+                export_docx=export_docx,
+                docx_output_path=docx_output_path,
+            )
+        except (ValueError, ProfileValidationError) as exc:
+            return render(
+                request,
+                "tailor_cv_draft.html",
+                {
+                    "page_title": "Tailored CV Draft",
+                    "view": build_resume_tailored_draft_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file,
+                        output_path=output_path,
+                        export_docx=export_docx,
+                        docx_output_path=docx_output_path,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "tailor_cv_draft.html",
+            {
+                "page_title": "Tailored CV Draft",
+                "view": build_resume_tailored_draft_form_view(
+                    project_state,
+                    ranking_file=ranking_file,
+                    job_id=job_id,
+                    cv_path=cv_path,
+                    base_cover_letter_path=base_cover_letter_path,
+                    jobs_file=jobs_file,
+                    output_path=output_path,
+                    export_docx=export_docx,
+                    docx_output_path=docx_output_path,
                     result=result,
                 ),
             },

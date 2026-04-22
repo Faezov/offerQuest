@@ -4,12 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
+from .ats import ats_check_job_file, ats_check_job_record
 from .jobs import (
     collect_job_record_inputs,
     fetch_adzuna_jobs,
     fetch_greenhouse_jobs,
+    find_job_record,
     import_manual_jobs,
-    merge_job_record_sets,
     read_job_records,
     resolve_adzuna_credentials,
     write_job_records,
@@ -38,6 +39,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_profile_reuse_arguments(score_job_parser)
     score_job_parser.add_argument("--job", type=Path, required=True, help="Job description file")
     score_job_parser.add_argument("--output", type=Path, help="Write score JSON to this path")
+
+    ats_parser = subparsers.add_parser(
+        "ats-check",
+        help="Run ATS-style resume checks against one target job",
+    )
+    ats_parser.add_argument("--cv", type=Path, required=True, help="CV file")
+    ats_parser.add_argument("--cover-letter", type=Path, help="Optional cover letter to improve role suggestions")
+    ats_job_group = ats_parser.add_mutually_exclusive_group(required=True)
+    ats_job_group.add_argument("--job", type=Path, help="Raw job description file")
+    ats_job_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
+    ats_parser.add_argument("--job-id", help="Job id inside --jobs-file")
+    ats_parser.add_argument("--output", type=Path, help="Write ATS report JSON to this path")
 
     rank_jobs_parser = subparsers.add_parser(
         "rank-jobs",
@@ -113,6 +126,30 @@ def main() -> int:
         profile = build_profile_from_files(args.cv, args.cover_letter)
         write_optional_json(args.output, profile)
         print(json.dumps(profile, indent=2))
+        return 0
+
+    if args.command == "ats-check":
+        if args.job:
+            report = ats_check_job_file(
+                args.cv,
+                args.job,
+                cover_letter_path=args.cover_letter,
+            )
+        else:
+            if not args.job_id:
+                parser.error("--job-id is required when using --jobs-file")
+            jobs = read_job_records(args.jobs_file)
+            job_record = find_job_record(jobs, args.job_id)
+            if job_record is None:
+                parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
+            report = ats_check_job_record(
+                args.cv,
+                job_record,
+                cover_letter_path=args.cover_letter,
+            )
+
+        write_optional_json(args.output, report)
+        print(json.dumps(report, indent=2))
         return 0
 
     if args.command == "fetch-adzuna":

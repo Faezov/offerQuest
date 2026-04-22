@@ -40,6 +40,17 @@ python3 -m offerquest export-docx \
   --output data/CV_BF_20260415.docx
 ```
 
+Generate a job-specific cover letter draft:
+
+```bash
+python3 -m offerquest generate-cover-letter \
+  --cv data/CV_BF_20260415.docx \
+  --base-cover-letter data/CL_BF_20260415.doc \
+  --jobs-file outputs/jobs/all.jsonl \
+  --job-id adzuna:5686608390 \
+  --output outputs/cover-letter-mane.txt
+```
+
 Score one job description:
 
 ```bash

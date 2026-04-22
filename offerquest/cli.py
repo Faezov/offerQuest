@@ -5,6 +5,11 @@ import json
 from pathlib import Path
 
 from .ats import ats_check_job_file, ats_check_job_record
+from .cover_letter import (
+    generate_cover_letter_for_job_file,
+    generate_cover_letter_for_job_record,
+    write_cover_letter,
+)
 from .docx import export_document_as_docx
 from .jobs import (
     collect_job_record_inputs,
@@ -47,6 +52,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_profile_reuse_arguments(score_job_parser)
     score_job_parser.add_argument("--job", type=Path, required=True, help="Job description file")
     score_job_parser.add_argument("--output", type=Path, help="Write score JSON to this path")
+
+    cover_letter_parser = subparsers.add_parser(
+        "generate-cover-letter",
+        help="Generate a job-specific cover letter draft",
+    )
+    cover_letter_parser.add_argument("--cv", type=Path, required=True, help="CV file")
+    cover_letter_parser.add_argument("--base-cover-letter", type=Path, help="Optional source cover letter for tone and context")
+    cover_letter_job_group = cover_letter_parser.add_mutually_exclusive_group(required=True)
+    cover_letter_job_group.add_argument("--job", type=Path, help="Raw job description file")
+    cover_letter_job_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
+    cover_letter_parser.add_argument("--job-id", help="Job id inside --jobs-file")
+    cover_letter_parser.add_argument("--output", type=Path, required=True, help="Write generated cover letter to this path")
 
     ats_parser = subparsers.add_parser(
         "ats-check",
@@ -142,6 +159,39 @@ def main() -> int:
             json.dumps(
                 {
                     "source": str(args.input),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "generate-cover-letter":
+        if args.job:
+            payload = generate_cover_letter_for_job_file(
+                args.cv,
+                args.job,
+                base_cover_letter_path=args.base_cover_letter,
+            )
+        else:
+            if not args.job_id:
+                parser.error("--job-id is required when using --jobs-file")
+            jobs = read_job_records(args.jobs_file)
+            job_record = find_job_record(jobs, args.job_id)
+            if job_record is None:
+                parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
+            payload = generate_cover_letter_for_job_record(
+                args.cv,
+                job_record,
+                base_cover_letter_path=args.base_cover_letter,
+            )
+
+        write_cover_letter(args.output, payload)
+        print(
+            json.dumps(
+                {
+                    "job_title": payload.get("job_title"),
+                    "company": payload.get("company"),
                     "output": str(args.output),
                 },
                 indent=2,

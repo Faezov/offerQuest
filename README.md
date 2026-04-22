@@ -63,6 +63,12 @@ Start a repo-local Ollama server and keep its cache inside this project:
 ./scripts/start-ollama-local.sh
 ```
 
+If you want GPU acceleration from a repo-local install, download the full Linux package first:
+
+```bash
+./scripts/install-ollama-local.sh
+```
+
 Pull a small model first to verify the workflow quickly:
 
 ```bash
@@ -84,6 +90,7 @@ python3 -m offerquest generate-cover-letter-llm \
   --jobs-file outputs/jobs/all.jsonl \
   --job-id adzuna:5686608390 \
   --model qwen3:8b \
+  --timeout-seconds 180 \
   --output outputs/cover-letter-mane-llm.txt
 ```
 
@@ -111,7 +118,8 @@ python3 -m offerquest generate-cover-letters-llm \
   --output-dir outputs/cover-letters-top5-llm \
   --top 5 \
   --docx \
-  --model qwen3:8b
+  --model qwen3:8b \
+  --timeout-seconds 180
 ```
 
 Score one job description:
@@ -231,3 +239,5 @@ python3 -m offerquest rank-jobs \
 - `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.
 - The Ollama-backed cover letter commands require a local Ollama server and a pulled model such as `qwen3:0.6b` for a quick smoke test or `qwen3:8b` for better quality.
 - `./scripts/ollama-local.sh` keeps the Ollama home directory and model cache under `.ollama-home/` in this repo, which avoids mixing job-search models into your normal shell environment.
+- Qwen3 thinking is enabled by default in Ollama, so OfferQuest disables it for cover-letter generation and uses a longer request timeout to give local CPU inference enough time to return final JSON.
+- The lightweight fallback binary under `.tools/ollama-partial/` is enough for CPU inference, but GPU acceleration needs the full local install from `./scripts/install-ollama-local.sh` or a normal system-wide Ollama install.

@@ -100,6 +100,7 @@ def generate_cover_letter_for_job_record_llm(
     employer_context_path: str | Path | None = None,
     model: str = "qwen3:8b",
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    timeout_seconds: int = 180,
 ) -> dict:
     cv_text = read_document_text(cv_path)
     base_cover_letter_text = read_optional_text(base_cover_letter_path)
@@ -128,6 +129,7 @@ def generate_cover_letter_for_job_record_llm(
         employer_context_text=employer_context_text,
         model=model,
         base_url=base_url,
+        timeout_seconds=timeout_seconds,
     )
 
     return {
@@ -226,6 +228,7 @@ def generate_cover_letters_from_ranking_llm(
     export_docx: bool = False,
     model: str = "qwen3:8b",
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    timeout_seconds: int = 180,
 ) -> dict:
     job_records = read_job_records(jobs_file)
     ranking_payload = json.loads(Path(ranking_file).read_text(encoding="utf-8"))
@@ -258,6 +261,7 @@ def generate_cover_letters_from_ranking_llm(
             employer_context_path=employer_context_path,
             model=model,
             base_url=base_url,
+            timeout_seconds=timeout_seconds,
         )
 
         filename_stem = build_cover_letter_filename(index, payload)
@@ -368,6 +372,7 @@ def build_cover_letter_with_ollama(
     employer_context_text: str,
     model: str,
     base_url: str,
+    timeout_seconds: int,
 ) -> dict:
     schema = cover_letter_schema()
     messages = [
@@ -401,6 +406,8 @@ def build_cover_letter_with_ollama(
         schema=schema,
         base_url=base_url,
         temperature=0.2,
+        think=False,
+        timeout_seconds=timeout_seconds,
     )
     return normalize_llm_cover_letter_response(response, profile=profile)
 
@@ -444,28 +451,59 @@ def build_cover_letter_prompt(
     employer_context_text: str,
     schema: dict[str, Any],
 ) -> str:
+    base_cover_letter_style_reference = build_base_cover_letter_style_reference(
+        base_cover_letter_text
+    )
+    llm_profile_context = build_llm_profile_context(profile)
     return (
         "Write a strong employer-specific cover letter draft for this job.\n\n"
         "Requirements:\n"
         "- 4 to 5 short paragraphs\n"
         "- natural, credible tone\n"
         "- clearly tailored to the employer and role\n"
+        "- the target job is only the role described in Job context and Job description text\n"
         "- grounded only in the candidate evidence below\n"
         "- do not claim missing skills as if they are proven facts\n"
         "- if there is a gap, frame it honestly and constructively\n"
+        "- never reuse a different role title, req number, employer name, or location from the base cover letter reference\n"
+        "- do not treat prior target-role guesses from other applications as the current target job\n"
         "- end with 'With best regards,' and the candidate name\n"
         "- return JSON only\n\n"
         f"JSON schema:\n{json.dumps(schema, indent=2)}\n\n"
         f"Job context:\n{json.dumps(job_context, indent=2)}\n\n"
-        f"Candidate profile:\n{json.dumps(profile, indent=2)}\n\n"
+        f"Candidate evidence profile:\n{json.dumps(llm_profile_context, indent=2)}\n\n"
         f"ATS report:\n{json.dumps(ats_report, indent=2)}\n\n"
-        "Base cover letter reference:\n"
-        f"{base_cover_letter_text or '[none]'}\n\n"
+        "Base cover letter tone reference:\n"
+        f"{base_cover_letter_style_reference}\n\n"
         "Employer-specific context:\n"
         f"{employer_context_text or '[none provided]'}\n\n"
         "Job description text:\n"
         f"{job_text}\n"
     )
+
+
+def build_base_cover_letter_style_reference(base_cover_letter_text: str) -> str:
+    if not base_cover_letter_text.strip():
+        return "[none]"
+    return (
+        "Use the candidate's base cover letter only as a tone reference.\n"
+        "- professional, direct, and evidence-based\n"
+        "- specific about data/reporting work\n"
+        "- honest about fit gaps without underselling\n"
+        "- do not copy any role title, req number, employer name, or location from it"
+    )
+
+
+def build_llm_profile_context(profile: dict) -> dict:
+    return {
+        "name": profile.get("name"),
+        "location": profile.get("location"),
+        "years_experience": profile.get("years_experience"),
+        "summary": profile.get("summary"),
+        "core_skills": profile.get("core_skills", []),
+        "domains": profile.get("domains", []),
+        "recent_roles": profile.get("recent_roles", []),
+    }
 
 
 def normalize_llm_cover_letter_response(response: dict, *, profile: dict) -> dict:

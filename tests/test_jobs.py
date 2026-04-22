@@ -9,12 +9,15 @@ from unittest.mock import patch
 from offerquest.jobs import (
     collect_job_record_inputs,
     fetch_adzuna_jobs,
+    fetch_adzuna_job_pages,
     fetch_greenhouse_jobs,
     import_manual_jobs,
     job_record_to_text,
     merge_job_record_sets,
     normalize_adzuna_job,
     normalize_greenhouse_job,
+    read_job_records,
+    refresh_job_sources,
     write_job_records,
 )
 from offerquest.scoring import score_job_record
@@ -177,6 +180,58 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(records[0]["company"], "NSW Health")
         self.assertEqual(fetch_json_mock.call_count, 1)
 
+    def test_fetch_adzuna_job_pages_merges_pages_and_adds_query_metadata(self) -> None:
+        payloads = [
+            [
+                {
+                    "source": "adzuna",
+                    "external_id": "1",
+                    "title": "Senior Data Analyst",
+                    "company": "NSW Health",
+                    "url": "https://example.com/jobs/1",
+                    "description_text": "Short description",
+                }
+            ],
+            [
+                {
+                    "source": "adzuna",
+                    "external_id": "1",
+                    "title": "Senior Data Analyst",
+                    "company": "NSW Health",
+                    "url": "https://example.com/jobs/1",
+                    "description_text": "Longer SQL and metadata description",
+                },
+                {
+                    "source": "adzuna",
+                    "external_id": "2",
+                    "title": "Reporting Analyst",
+                    "company": "Healthscope",
+                    "url": "https://example.com/jobs/2",
+                    "description_text": "Reporting and dashboard role",
+                },
+            ],
+        ]
+
+        with patch("offerquest.jobs.fetch_adzuna_jobs", side_effect=payloads) as fetch_mock:
+            records = fetch_adzuna_job_pages(
+                app_id="app",
+                app_key="key",
+                what="data analyst",
+                where="Sydney",
+                country="au",
+                pages=2,
+                results_per_page=20,
+            )
+
+        self.assertEqual(fetch_mock.call_count, 2)
+        self.assertEqual(len(records), 2)
+
+        merged = next(record for record in records if record["id"] == "adzuna:1")
+        self.assertIn("SQL and metadata", merged["description_text"])
+        self.assertEqual(merged["metadata"]["query_what"], "data analyst")
+        self.assertEqual(merged["metadata"]["query_where"], "Sydney")
+        self.assertEqual(merged["metadata"]["query_country"], "au")
+
     def test_fetch_greenhouse_jobs_uses_board_name(self) -> None:
         payloads = [
             {"name": "Example Org"},
@@ -224,6 +279,120 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(result["company"], "NSW Health")
         self.assertEqual(result["salary_max"], 140000)
         self.assertGreaterEqual(result["score"], 70)
+
+    def test_refresh_job_sources_writes_source_outputs_merge_and_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir()
+            (jobs_dir / "manual-role.txt").write_text(
+                "Senior Reporting Analyst\nNSW Health, Sydney\nSQL and reporting\n",
+                encoding="utf-8",
+            )
+
+            config = {
+                "sources": [
+                    {
+                        "name": "adzuna-reporting",
+                        "type": "adzuna",
+                        "what": "reporting analyst",
+                        "where": "Sydney",
+                        "country": "au",
+                        "pages": 2,
+                        "results_per_page": 20,
+                        "output": "adzuna-reporting.jsonl",
+                    },
+                    {
+                        "name": "greenhouse-example",
+                        "type": "greenhouse",
+                        "board_token": "example",
+                        "output": "greenhouse-example.jsonl",
+                    },
+                    {
+                        "name": "manual",
+                        "type": "manual",
+                        "input_path": "jobs",
+                        "output": "manual.jsonl",
+                    },
+                ],
+                "merge": {
+                    "enabled": True,
+                    "inputs": [
+                        "adzuna-reporting.jsonl",
+                        "greenhouse-example.jsonl",
+                        "manual.jsonl",
+                    ],
+                    "output": "all.jsonl",
+                },
+                "summary_output": "refresh-summary.json",
+            }
+            config_path = root / "jobs-sources.json"
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+
+            adzuna_records = [
+                {
+                    "source": "adzuna",
+                    "external_id": "1",
+                    "title": "Reporting Analyst",
+                    "company": "NSW Health",
+                    "location": "Sydney",
+                    "description_text": "SQL reporting role",
+                    "url": "https://example.com/adzuna/1",
+                }
+            ]
+            greenhouse_records = [
+                {
+                    "source": "greenhouse",
+                    "external_id": "44",
+                    "title": "Metadata Analyst",
+                    "company": "Example Org",
+                    "location": "Sydney",
+                    "description_text": "Metadata and governance role",
+                    "url": "https://example.com/greenhouse/44",
+                }
+            ]
+
+            with patch(
+                "offerquest.jobs.fetch_adzuna_job_pages",
+                return_value=adzuna_records,
+            ) as adzuna_mock, patch(
+                "offerquest.jobs.fetch_greenhouse_jobs",
+                return_value=greenhouse_records,
+            ) as greenhouse_mock:
+                summary = refresh_job_sources(
+                    config_path,
+                    workspace_root=root,
+                    adzuna_app_id="app",
+                    adzuna_app_key="key",
+                )
+            self.assertEqual(adzuna_mock.call_count, 1)
+            self.assertEqual(greenhouse_mock.call_count, 1)
+            self.assertEqual(summary["source_count"], 3)
+            self.assertEqual(summary["merged_output"], "outputs/jobs/all.jsonl")
+            self.assertEqual(summary["merged_job_count"], 3)
+
+            output_root = root / "outputs" / "jobs"
+            merged_records = read_job_records(output_root / "all.jsonl")
+            adzuna_output = read_job_records(output_root / "adzuna-reporting.jsonl")
+            greenhouse_output = read_job_records(output_root / "greenhouse-example.jsonl")
+            manual_output = read_job_records(output_root / "manual.jsonl")
+
+            self.assertEqual(len(merged_records), 3)
+            self.assertEqual(len(adzuna_output), 1)
+            self.assertEqual(len(greenhouse_output), 1)
+            self.assertEqual(len(manual_output), 1)
+            self.assertEqual(adzuna_output[0]["metadata"]["source_name"], "adzuna-reporting")
+            self.assertEqual(
+                greenhouse_output[0]["metadata"]["source_name"], "greenhouse-example"
+            )
+            self.assertEqual(manual_output[0]["metadata"]["source_name"], "manual")
+
+            summary_path = output_root / "refresh-summary.json"
+            self.assertTrue(summary_path.exists())
+            persisted_summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                persisted_summary["summary_output"], "outputs/jobs/refresh-summary.json"
+            )
 
 
 if __name__ == "__main__":

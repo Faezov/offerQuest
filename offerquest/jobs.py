@@ -45,6 +45,43 @@ def fetch_adzuna_jobs(
     return [normalize_adzuna_job(result, country=country) for result in results]
 
 
+def fetch_adzuna_job_pages(
+    *,
+    app_id: str,
+    app_key: str,
+    what: str | None = None,
+    where: str | None = None,
+    country: str = "au",
+    pages: int = 1,
+    results_per_page: int = 20,
+) -> list[dict]:
+    if pages < 1:
+        raise ValueError("Adzuna pages must be at least 1.")
+
+    record_sets = [
+        annotate_job_records(
+            fetch_adzuna_jobs(
+                app_id=app_id,
+                app_key=app_key,
+                what=what,
+                where=where,
+                country=country,
+                page=page,
+                results_per_page=results_per_page,
+            ),
+            extra_metadata=drop_none(
+                {
+                    "query_what": what,
+                    "query_where": where,
+                    "query_country": country,
+                }
+            ),
+        )
+        for page in range(1, pages + 1)
+    ]
+    return merge_job_record_sets(*record_sets)
+
+
 def fetch_greenhouse_jobs(board_token: str) -> list[dict]:
     board_url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}"
     jobs_url = f"https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs?content=true"
@@ -58,6 +95,148 @@ def fetch_greenhouse_jobs(board_token: str) -> list[dict]:
         normalize_greenhouse_job(job, board_token=board_token, company=company)
         for job in results
     ]
+
+
+def refresh_job_sources(
+    config_path: str | Path,
+    *,
+    workspace_root: str | Path,
+    output_dir: str | Path | None = None,
+    adzuna_app_id: str | None = None,
+    adzuna_app_key: str | None = None,
+) -> dict[str, Any]:
+    root = Path(workspace_root).resolve()
+    config_file = resolve_workspace_path(root, config_path)
+    config = json.loads(config_file.read_text(encoding="utf-8"))
+    sources = config.get("sources", [])
+    if not isinstance(sources, list):
+        raise ValueError("Job refresh config must contain a `sources` list.")
+
+    output_root = (
+        resolve_workspace_path(root, output_dir)
+        if output_dir is not None
+        else root / "outputs" / "jobs"
+    )
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    refreshed_sources: list[dict[str, Any]] = []
+    generated_outputs: list[Path] = []
+    adzuna_credentials: tuple[str | None, str | None] | None = None
+
+    for source in sources:
+        if not isinstance(source, dict):
+            raise ValueError("Each job source config entry must be an object.")
+        if source.get("enabled", True) is False:
+            continue
+
+        source_type = str(source.get("type") or "").strip().lower()
+        source_name = str(source.get("name") or source.get("output") or source_type).strip()
+        if not source_type or not source_name:
+            raise ValueError("Each enabled job source needs both `type` and `name`.")
+
+        output_name = str(source.get("output") or f"{slugify(source_name)}.jsonl").strip()
+        if not output_name:
+            raise ValueError(f"Job source `{source_name}` is missing an output filename.")
+        output_path = output_root / output_name
+
+        if source_type == "adzuna":
+            if adzuna_credentials is None:
+                adzuna_credentials = resolve_adzuna_credentials(adzuna_app_id, adzuna_app_key)
+            app_id, app_key = adzuna_credentials
+            if not app_id or not app_key:
+                raise ValueError(
+                    "Adzuna credentials are required for refresh sources with type `adzuna`."
+                )
+
+            records = annotate_job_records(
+                fetch_adzuna_job_pages(
+                    app_id=app_id,
+                    app_key=app_key,
+                    what=string_or_none(source.get("what")),
+                    where=string_or_none(source.get("where")),
+                    country=string_or_none(source.get("country")) or "au",
+                    pages=int(source.get("pages") or 1),
+                    results_per_page=int(source.get("results_per_page") or 20),
+                ),
+                extra_metadata={"source_name": source_name},
+            )
+        elif source_type == "greenhouse":
+            board_token = string_or_none(source.get("board_token"))
+            if not board_token:
+                raise ValueError(
+                    f"Greenhouse source `{source_name}` is missing `board_token`."
+                )
+            records = annotate_job_records(
+                fetch_greenhouse_jobs(board_token),
+                extra_metadata={"source_name": source_name},
+            )
+        elif source_type == "manual":
+            input_path = string_or_none(source.get("input_path"))
+            if not input_path:
+                raise ValueError(f"Manual source `{source_name}` is missing `input_path`.")
+            records = annotate_job_records(
+                import_manual_jobs(resolve_workspace_path(root, input_path)),
+                extra_metadata={"source_name": source_name},
+            )
+        else:
+            raise ValueError(f"Unsupported job source type: {source_type}")
+
+        write_job_records(output_path, records)
+        generated_outputs.append(output_path)
+        refreshed_sources.append(
+            {
+                "name": source_name,
+                "type": source_type,
+                "job_count": len(records),
+                "output": str(relative_to_root(output_path, root)),
+            }
+        )
+
+    merge_config = config.get("merge") if isinstance(config.get("merge"), dict) else {}
+    merge_enabled = bool(merge_config.get("enabled", True))
+    merged_output_path: Path | None = None
+    merged_job_count = 0
+
+    if merge_enabled:
+        merge_inputs = merge_config.get("inputs")
+        if merge_inputs is not None and not isinstance(merge_inputs, list):
+            raise ValueError("Job refresh config `merge.inputs` must be a list when provided.")
+
+        if merge_inputs:
+            input_paths = [resolve_refresh_input_path(output_root, item) for item in merge_inputs]
+        else:
+            input_paths = generated_outputs
+
+        merged_records = collect_job_record_inputs(input_paths)
+        merged_output_name = str(merge_config.get("output") or "all.jsonl").strip()
+        if not merged_output_name:
+            raise ValueError("Job refresh config merge output cannot be empty.")
+        merged_output_path = output_root / merged_output_name
+        write_job_records(merged_output_path, merged_records)
+        merged_job_count = len(merged_records)
+
+    summary_output_name = str(config.get("summary_output") or "refresh-summary.json").strip()
+    if not summary_output_name:
+        raise ValueError("Job refresh config summary output cannot be empty.")
+    summary_path = output_root / summary_output_name
+
+    summary = {
+        "refreshed_at": now_iso(),
+        "config_path": str(relative_to_root(config_file, root)),
+        "output_dir": str(relative_to_root(output_root, root)),
+        "source_count": len(refreshed_sources),
+        "sources": refreshed_sources,
+        "merge_enabled": merge_enabled,
+        "merged_output": (
+            str(relative_to_root(merged_output_path, root))
+            if merged_output_path is not None
+            else None
+        ),
+        "merged_job_count": merged_job_count if merge_enabled else None,
+        "summary_output": str(relative_to_root(summary_path, root)),
+    }
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
 
 
 def fetch_json(url: str, *, timeout: int = 30) -> dict[str, Any]:
@@ -273,6 +452,31 @@ def merge_job_record_sets(*record_sets: list[dict]) -> list[dict]:
                 merged[dedupe_key] = normalized
 
     return sorted(merged.values(), key=sort_key_for_record)
+
+
+def annotate_job_records(
+    records: list[dict],
+    *,
+    extra_metadata: dict[str, Any],
+) -> list[dict]:
+    if not extra_metadata:
+        return [normalize_job_record(record) for record in records]
+
+    annotated: list[dict] = []
+    for record in records:
+        normalized = normalize_job_record(record)
+        annotated.append(
+            normalize_job_record(
+                {
+                    **normalized,
+                    "metadata": {
+                        **(normalized.get("metadata") or {}),
+                        **drop_none(extra_metadata),
+                    },
+                }
+            )
+        )
+    return annotated
 
 
 def merge_two_job_records(existing: dict, incoming: dict) -> dict:
@@ -495,6 +699,33 @@ def number_or_none(value: Any) -> float | int | None:
 
 def drop_none(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if value not in (None, "", [], {})}
+
+
+def resolve_workspace_path(root: Path, raw_path: str | Path) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path.resolve()
+    return (root / path).resolve()
+
+
+def resolve_refresh_input_path(output_root: Path, raw_path: str | Path) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path.resolve()
+    return (output_root / path).resolve()
+
+
+def relative_to_root(path: Path, root: Path) -> Path:
+    try:
+        return path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return path.resolve()
+
+
+def slugify(value: str) -> str:
+    lowered = value.lower()
+    lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
+    return lowered.strip("-") or "jobs"
 
 
 def resolve_adzuna_credentials(

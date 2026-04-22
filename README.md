@@ -228,6 +228,14 @@ python3 -m offerquest rank-jobs \
   --output outputs/job-ranking.json
 ```
 
+Refresh the configured Adzuna and manual job sources into `outputs/jobs/*.jsonl` and rebuild `all.jsonl`:
+
+```bash
+python3 -m offerquest refresh-jobs
+```
+
+By default this reads [jobs/sources.json](/home/bulat/app/offerQuest/jobs/sources.json), writes refreshed source files into `outputs/jobs/`, and emits `outputs/jobs/refresh-summary.json` so you can see exactly which source produced which file.
+
 Fetch jobs from Adzuna into normalized records:
 
 ```bash
@@ -303,9 +311,9 @@ python3 -m offerquest rank-jobs \
 ## Recommended Workflow
 
 1. Put job descriptions into `jobs/` as `.txt` or `.md` files.
-2. Fetch jobs from Adzuna and any public Greenhouse boards you want to monitor.
-3. Import any manually collected job descriptions.
-4. Merge the job-record files into one dataset.
+2. Update [jobs/sources.json](/home/bulat/app/offerQuest/jobs/sources.json) with the Adzuna searches and any other sources you want to monitor.
+3. Run `refresh-jobs` to regenerate the source `.jsonl` files and rebuild `outputs/jobs/all.jsonl`.
+4. Add one-off `fetch-greenhouse` or `import-manual-jobs` runs only when you are debugging or testing a source in isolation.
 5. Build or refresh your profile after updating your CV or cover letter.
 6. Run `rank-jobs` and focus your effort on the highest-scoring roles.
 7. Run `rerank-jobs` on the top set when you want a second-pass ordering that leans more on ATS-style fit.
@@ -318,6 +326,7 @@ python3 -m offerquest rank-jobs \
 - `rerank-jobs` is also heuristic; it adds a second-pass ATS-style signal, but it still does not replace judgment.
 - It is designed to surface fit quickly and consistently, not replace judgment.
 - `ats-check` is an ATS-style heuristic review, not a vendor-specific simulation of Workday, Greenhouse, Lever, or Taleo.
+- `refresh-jobs` uses [jobs/sources.json](/home/bulat/app/offerQuest/jobs/sources.json) by default, so adding or removing search streams is a config change rather than a shell-history exercise.
 - `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.
 - The Ollama-backed cover letter commands require a local Ollama server and a pulled model such as `qwen3:0.6b` for a quick smoke test or `qwen3:8b` for better quality.
 - The curated stronger model set currently favors `qwen3:8b`, `gemma3:12b`, and `qwen3:14b`, with `mistral-small` treated as a stretch option because it is more likely to spill beyond a ~12 GB GPU.

@@ -23,6 +23,7 @@ from .jobs import (
     find_job_record,
     import_manual_jobs,
     read_job_records,
+    refresh_job_sources,
     resolve_adzuna_credentials,
     write_job_records,
 )
@@ -174,6 +175,25 @@ def build_parser() -> argparse.ArgumentParser:
     adzuna_parser.add_argument("--page", type=int, default=1, help="Results page number")
     adzuna_parser.add_argument("--results-per-page", type=int, default=20, help="Results per page")
     adzuna_parser.add_argument("--output", type=Path, required=True, help="Write normalized jobs to this file")
+
+    refresh_jobs_parser = subparsers.add_parser(
+        "refresh-jobs",
+        help="Refresh multiple job-source outputs from a config file and rebuild merged job datasets",
+    )
+    refresh_jobs_parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("jobs/sources.json"),
+        help="JSON config that declares Adzuna, Greenhouse, and manual job sources",
+    )
+    refresh_jobs_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/jobs"),
+        help="Directory where refreshed job .jsonl files and summary JSON should be written",
+    )
+    refresh_jobs_parser.add_argument("--app-id", help="Adzuna app id; falls back to ADZUNA_APP_ID")
+    refresh_jobs_parser.add_argument("--app-key", help="Adzuna app key; falls back to ADZUNA_APP_KEY")
 
     greenhouse_parser = subparsers.add_parser(
         "fetch-greenhouse",
@@ -462,6 +482,38 @@ def main() -> int:
                     indent=2,
                 )
             )
+            return 0
+
+        if args.command == "refresh-jobs":
+            summary = refresh_job_sources(
+                args.config,
+                workspace_root=Path.cwd(),
+                output_dir=args.output_dir,
+                adzuna_app_id=args.app_id,
+                adzuna_app_key=args.app_key,
+            )
+
+            artifacts = [{"kind": "jobs_refresh_summary", "path": Path(summary["summary_output"])}]
+            artifacts.extend(
+                {"kind": "jobs_file", "path": Path(source["output"])}
+                for source in summary.get("sources", [])
+                if source.get("output")
+            )
+            if summary.get("merged_output"):
+                artifacts.append({"kind": "jobs_file", "path": Path(summary["merged_output"])})
+
+            record_run(
+                project_state,
+                "refresh-jobs",
+                artifacts=artifacts,
+                metadata={
+                    "source_count": summary.get("source_count"),
+                    "merged_job_count": summary.get("merged_job_count"),
+                    "config_path": summary.get("config_path"),
+                },
+                label=Path(args.output_dir).name,
+            )
+            print(json.dumps(summary, indent=2))
             return 0
 
         if args.command == "fetch-greenhouse":

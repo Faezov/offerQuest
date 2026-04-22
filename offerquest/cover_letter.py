@@ -7,10 +7,11 @@ from typing import Any
 
 from .ats import build_ats_report
 from .docx import export_document_as_docx
+from .errors import ProfileValidationError
 from .extractors import read_document_text
 from .jobs import find_job_record, job_record_to_text, read_job_records
 from .ollama import DEFAULT_OLLAMA_BASE_URL, generate_structured_response
-from .profile import build_candidate_profile
+from .profile import build_candidate_profile, looks_like_location_line
 from .scoring import infer_job_title
 
 
@@ -25,6 +26,7 @@ def generate_cover_letter_for_job_file(
     base_cover_letter_text = read_optional_text(base_cover_letter_path)
 
     profile = build_candidate_profile(cv_text, base_cover_letter_text)
+    validate_cover_letter_profile(profile)
     ats_report = build_ats_report(
         cv_text,
         job_text,
@@ -59,6 +61,7 @@ def generate_cover_letter_for_job_record(
     cv_text = read_document_text(cv_path)
     base_cover_letter_text = read_optional_text(base_cover_letter_path)
     profile = build_candidate_profile(cv_text, base_cover_letter_text)
+    validate_cover_letter_profile(profile)
     job_text = job_record_to_text(job_record)
 
     ats_report = build_ats_report(
@@ -106,6 +109,7 @@ def generate_cover_letter_for_job_record_llm(
     base_cover_letter_text = read_optional_text(base_cover_letter_path)
     employer_context_text = read_optional_text(employer_context_path)
     profile = build_candidate_profile(cv_text, base_cover_letter_text)
+    validate_cover_letter_profile(profile)
     job_text = job_record_to_text(job_record)
 
     ats_report = build_ats_report(
@@ -308,40 +312,48 @@ def generate_cover_letters_from_ranking_llm(
 
 
 def build_cover_letter_text(*, profile: dict, ats_report: dict, job_context: dict) -> str:
+    validate_cover_letter_profile(profile)
     job_title = job_context.get("job_title") or "the advertised role"
     company = job_context.get("company") or "your team"
-    location = profile.get("location") or "Sydney, NSW, Australia"
-    years = profile.get("years_experience") or 10
+    location = profile.get("location")
+    years = profile.get("years_experience")
 
     matched_keywords = ats_report["keyword_coverage"]["matched_keywords"][:4]
     missing_keywords = ats_report["required_keywords"]["missing"][:2]
     recent_roles = profile.get("recent_roles", [])
     top_roles = recent_roles[:2]
 
-    matched_phrase = join_human_list(lower_keywords(matched_keywords)) or "data analysis and reporting"
+    matched_phrase = join_human_list(lower_keywords(matched_keywords)) or build_safe_skill_phrase(profile)
     role_phrase = build_role_phrase(top_roles)
     domain_phrase = build_domain_phrase(profile.get("domains", []))
+    evidence_phrase = join_human_list(build_profile_evidence_fragments(profile))
+    opening_background = build_opening_background(profile)
 
     opening = (
         f"Dear Hiring Team,\n\n"
         f"I am writing to apply for the {job_title} position"
-        f"{format_company_phrase(company)}. Based in {location}, I bring more than {years} years "
-        f"of experience across data analysis, reporting, workflow improvement, and structured problem-solving. "
+        f"{format_company_phrase(company)}."
+        f"{opening_background} "
         f"What especially attracts me to this opportunity is the chance to contribute with strengths in {matched_phrase}."
     )
 
     experience = (
-        f"In recent roles{role_phrase}, I have worked with complex datasets in environments where accuracy, "
-        f"clarity, and reliable reporting mattered. My background includes building and improving analytics workflows, "
-        f"automating recurring processes with Python and SQL, checking data quality, and translating technical outputs "
-        f"into clear, decision-ready information."
+        f"{build_recent_experience_opening(role_phrase)} I have worked with complex datasets in environments where accuracy, "
+        f"clarity, and reliable reporting mattered. That has included {evidence_phrase}."
     )
 
-    alignment = (
-        f"That experience aligns well with the requirements suggested by this role, particularly around "
-        f"{matched_phrase}. I would bring a practical, detail-oriented approach to the position, along with "
-        f"experience from {domain_phrase} settings where structured data, consistency, and clear communication were essential."
-    )
+    if domain_phrase == "data-rich":
+        alignment = (
+            f"That experience aligns well with the requirements suggested by this role, particularly around "
+            f"{matched_phrase}. I would bring a practical, detail-oriented approach to the position, with a focus on "
+            f"structured analysis, dependable delivery, and clear communication."
+        )
+    else:
+        alignment = (
+            f"That experience aligns well with the requirements suggested by this role, particularly around "
+            f"{matched_phrase}. I would bring a practical, detail-oriented approach to the position, along with "
+            f"experience from {domain_phrase} settings where structured data, consistency, and clear communication were essential."
+        )
 
     gap_paragraph = ""
     if missing_keywords:
@@ -354,9 +366,9 @@ def build_cover_letter_text(*, profile: dict, ats_report: dict, job_context: dic
 
     closing = (
         f"\n\nThank you for considering my application. I would welcome the opportunity to discuss how my background in "
-        f"data analysis, reporting, automation, and quality-focused problem-solving could contribute to {company or 'your team'}.\n\n"
+        f"{build_safe_skill_phrase(profile)} could contribute to {company or 'your team'}.\n\n"
         f"With best regards,\n"
-        f"{profile.get('name') or 'Bulat Faezov'}"
+        f"{profile['name']}"
     )
 
     return opening + "\n\n" + experience + "\n\n" + alignment + gap_paragraph + closing
@@ -503,6 +515,7 @@ def build_llm_profile_context(profile: dict) -> dict:
         "core_skills": profile.get("core_skills", []),
         "domains": profile.get("domains", []),
         "recent_roles": profile.get("recent_roles", []),
+        "quality_warnings": profile.get("quality_warnings", []),
     }
 
 
@@ -578,27 +591,19 @@ def format_company_phrase(company: str | None) -> str:
 
 
 def looks_like_location(value: str) -> bool:
-    lowered = value.lower()
-    return any(
-        token in lowered
-        for token in (
-            "sydney",
-            "nsw",
-            "australia",
-            "melbourne",
-            "brisbane",
-            "perth",
-            "canberra",
-            "remote",
-            "hybrid",
-            "region",
-            "cbd",
-        )
-    )
+    return bool(value and looks_like_location_line(value))
 
 
 def lower_keywords(values: list[str]) -> list[str]:
-    return [value[0].lower() + value[1:] if value else value for value in values]
+    lowered: list[str] = []
+    for value in values:
+        if not value:
+            lowered.append(value)
+        elif value.isupper():
+            lowered.append(value)
+        else:
+            lowered.append(value[0].lower() + value[1:])
+    return lowered
 
 
 def join_human_list(values: list[str]) -> str:
@@ -629,13 +634,14 @@ def write_cover_letter(path: str | Path, payload: dict) -> None:
 
 
 def select_top_unique_rankings(rankings: list[dict], *, limit: int) -> list[dict]:
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     selected: list[dict] = []
 
     for ranking in rankings:
         company = (ranking.get("company") or "").strip().lower()
         job_title = (ranking.get("job_title") or "").strip().lower()
-        dedupe_key = (company, job_title)
+        location = (ranking.get("location") or "").strip().lower()
+        dedupe_key = (company, job_title, location)
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
@@ -681,3 +687,87 @@ def resolve_employer_context_path(
         if candidate.exists():
             return candidate
     return None
+
+
+def validate_cover_letter_profile(profile: dict) -> None:
+    missing: list[str] = []
+    if not profile.get("name"):
+        missing.append("a candidate name")
+    if not profile.get("summary") and not profile.get("recent_roles") and not profile.get("core_skills"):
+        missing.append("usable candidate evidence")
+
+    if missing:
+        raise ProfileValidationError(
+            "Cannot generate a cover letter safely because the profile is missing "
+            + join_human_list(missing)
+            + "."
+        )
+
+
+def build_opening_background(profile: dict) -> str:
+    years = profile.get("years_experience")
+    location = profile.get("location")
+    summary = profile.get("summary")
+
+    parts: list[str] = []
+    if location:
+        parts.append(f"Based in {location}")
+    if years:
+        parts.append(f"I bring more than {years} years of experience across {build_safe_skill_phrase(profile)}")
+    elif summary:
+        parts.append(summary)
+    else:
+        parts.append(f"I bring experience across {build_safe_skill_phrase(profile)}")
+    return " ".join(parts).strip()
+
+
+def build_recent_experience_opening(role_phrase: str) -> str:
+    if role_phrase:
+        return f"In recent roles{role_phrase},"
+    return "In my recent work,"
+
+
+def build_profile_evidence_fragments(profile: dict) -> list[str]:
+    skills = set(profile.get("core_skills", []))
+    fragments: list[str] = []
+
+    if {"Python", "SQL", "Automation"}.issubset(skills):
+        fragments.append("automating recurring analytical work with Python and SQL")
+    elif {"SQL", "Reporting"}.issubset(skills):
+        fragments.append("building reporting workflows with SQL")
+
+    if "Data quality" in skills:
+        fragments.append("checking data quality and consistency")
+    if "Metadata" in skills:
+        fragments.append("working carefully with metadata, definitions, and structured information")
+    if "Reporting" in skills and "building reporting workflows with SQL" not in fragments:
+        fragments.append("turning analysis into clear reporting")
+    if "Visualization" in skills:
+        fragments.append("presenting findings in a more accessible way")
+    if "Stakeholder collaboration" in skills:
+        fragments.append("working closely with stakeholders to translate requirements into usable outputs")
+
+    if not fragments:
+        summary = profile.get("summary")
+        if summary:
+            fragments.append("delivering careful, evidence-based analytical work")
+        else:
+            fragments.append(f"applying strengths in {build_safe_skill_phrase(profile)}")
+
+    return fragments[:3]
+
+
+def build_safe_skill_phrase(profile: dict) -> str:
+    preferred_order = [
+        "SQL",
+        "Python",
+        "Reporting",
+        "Data quality",
+        "Metadata",
+        "Automation",
+        "Visualization",
+    ]
+    skills = [skill for skill in preferred_order if skill in profile.get("core_skills", [])]
+    if skills:
+        return join_human_list(lower_keywords(skills[:3]))
+    return "data analysis and structured problem-solving"

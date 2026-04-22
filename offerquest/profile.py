@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from .extractors import read_document_text
+from .matching import find_pattern_matches
 
 SECTION_HEADERS = {
     "Professional Summary",
@@ -46,6 +47,40 @@ DOMAIN_PATTERNS = {
     "Biotech": ["protein design", "biotechnology", "bioinformatics"],
 }
 
+AUSTRALIAN_STATE_CODES = {
+    "ACT",
+    "NSW",
+    "NT",
+    "QLD",
+    "SA",
+    "TAS",
+    "VIC",
+    "WA",
+}
+
+LOCATION_TERMS = {
+    "australia",
+    "new zealand",
+    "singapore",
+    "canada",
+    "usa",
+    "united states",
+    "uk",
+    "united kingdom",
+    "remote",
+    "hybrid",
+    "onsite",
+}
+
+NAME_DEGREE_SUFFIXES = [
+    r"M\.?\s*Sc\.?",
+    r"B\.?\s*Sc\.?",
+    r"Ph\.?\s*D\.?",
+    r"MBA",
+    r"MPH",
+    r"MEng",
+]
+
 
 def build_profile_from_files(
     cv_path: str | Path,
@@ -74,10 +109,12 @@ def build_candidate_profile(
     skills = detect_pattern_matches(combined_text, SKILL_PATTERNS)
     domains = detect_pattern_matches(combined_text, DOMAIN_PATTERNS)
     target_role_from_cover_letter = extract_target_role(cover_letter_text)
+    name = extract_name(cv_text, cover_letter_text)
+    location = extract_location(cv_text, cover_letter_text)
 
-    return {
-        "name": extract_name(cv_text, cover_letter_text),
-        "location": extract_location(cv_text, cover_letter_text),
+    profile = {
+        "name": name,
+        "location": location,
         "email": extract_email(combined_text),
         "years_experience": extract_years_experience(combined_text),
         "summary": extract_summary(sections),
@@ -85,12 +122,19 @@ def build_candidate_profile(
         "domains": domains,
         "recent_roles": extract_recent_roles(sections.get("Professional Experience", [])),
         "target_role_from_cover_letter": target_role_from_cover_letter,
-        "search_focus": build_search_focus(skills, domains, target_role_from_cover_letter),
+        "search_focus": build_search_focus(
+            skills,
+            domains,
+            target_role_from_cover_letter,
+            location=location,
+        ),
         "source_files": {
             "cv": cv_path,
             "cover_letter": cover_letter_path,
         },
     }
+    profile["quality_warnings"] = build_profile_quality_warnings(profile)
+    return profile
 
 
 def split_cv_sections(cv_text: str) -> dict[str, list[str]]:
@@ -113,6 +157,9 @@ def extract_name(cv_text: str, cover_letter_text: str) -> str | None:
     combined_text = cv_text + "\n" + cover_letter_text
     combined_lines = [line.strip() for line in combined_text.splitlines() if line.strip()]
     email = extract_email(combined_text)
+    preferred_lines = dedupe(
+        combined_lines[:8] + combined_lines[-4:] + combined_lines
+    )
 
     if email:
         email_tokens = [
@@ -121,7 +168,7 @@ def extract_name(cv_text: str, cover_letter_text: str) -> str | None:
             if token
         ]
 
-        for line in combined_lines:
+        for line in preferred_lines:
             normalized = normalize_name_candidate(line)
             if not normalized:
                 continue
@@ -129,7 +176,7 @@ def extract_name(cv_text: str, cover_letter_text: str) -> str | None:
             if all(token in lowered_name for token in email_tokens[:2]):
                 return normalized
 
-    for line in reversed(combined_lines):
+    for line in preferred_lines:
         normalized = normalize_name_candidate(line)
         if normalized:
             return normalized
@@ -139,32 +186,69 @@ def extract_name(cv_text: str, cover_letter_text: str) -> str | None:
 
 def normalize_name_candidate(line: str) -> str | None:
     candidate = line.replace("\t", " ").strip()
-    candidate = re.sub(r",\s*M\.Sc\.$", "", candidate)
-    candidate = re.sub(r",\s*M\.Sc\b", "", candidate)
-    candidate = re.sub(r",\s*B\.Sc\b.*$", "", candidate)
+    candidate = strip_degree_suffixes(candidate)
+    candidate = candidate.strip(", ")
 
     if "Dear " in candidate or candidate.startswith("I am writing"):
         return None
-    if "@" in candidate or "|" in candidate:
+    if candidate in SECTION_HEADERS:
+        return None
+    if "@" in candidate or "|" in candidate or any(char.isdigit() for char in candidate):
+        return None
+    if looks_like_location_line(candidate):
+        return None
+    if not candidate or len(candidate.split()) > 4:
         return None
 
-    if re.fullmatch(r"[A-Z][a-z]+,\s*[A-Z][a-z]+", candidate):
-        last_name, first_name = [part.strip() for part in candidate.split(",", 1)]
-        return f"{first_name} {last_name}"
+    if "," in candidate:
+        parts = [part.strip() for part in candidate.split(",", 1)]
+        if len(parts) == 2 and all(part for part in parts):
+            candidate = f"{parts[1]} {parts[0]}"
 
-    if re.fullmatch(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}", candidate):
-        return candidate
+    tokens = candidate.split()
+    if not 2 <= len(tokens) <= 4:
+        return None
 
+    normalized_tokens = [normalize_name_token(token) for token in tokens]
+    if any(token is None for token in normalized_tokens):
+        return None
+
+    return " ".join(token for token in normalized_tokens if token)
+
+
+def strip_degree_suffixes(value: str) -> str:
+    cleaned = value
+    for suffix in NAME_DEGREE_SUFFIXES:
+        cleaned = re.sub(rf",?\s*{suffix}(?:\b.*)?$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
+def normalize_name_token(token: str) -> str | None:
+    if re.fullmatch(r"[A-Za-z]\.", token):
+        return token.upper()
+    if re.fullmatch(r"[A-Za-z]+(?:[-'][A-Za-z]+)*\.?", token):
+        core = token[:-1] if token.endswith(".") else token
+        normalized = core.title()
+        return normalized + ("." if token.endswith(".") else "")
     return None
 
 
 def extract_location(cv_text: str, cover_letter_text: str) -> str | None:
-    combined_lines = [line.strip() for line in (cv_text + "\n" + cover_letter_text).splitlines()]
+    combined_lines = [line.strip() for line in (cv_text + "\n" + cover_letter_text).splitlines() if line.strip()]
+
+    for line in combined_lines[:10]:
+        if looks_like_location_line(line):
+            return normalize_location_line(line)
+
     for line in combined_lines:
-        if "Sydney" in line and "Australia" in line:
-            return line
-        if "Sydney" in line and "NSW" in line:
-            return line
+        if looks_like_location_line(line):
+            return normalize_location_line(line)
+        based_in_match = re.search(
+            r"\bbased in\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*(?:,\s*[A-Z]{2,3})?(?:,\s*[A-Z][A-Za-z]+)?)",
+            line,
+        )
+        if based_in_match:
+            return based_in_match.group(1).strip()
     return None
 
 
@@ -197,13 +281,7 @@ def extract_summary(sections: dict[str, list[str]]) -> str | None:
 
 
 def detect_pattern_matches(text: str, patterns: dict[str, list[str]]) -> list[str]:
-    lowered = text.lower()
-    matches = [
-        label
-        for label, keywords in patterns.items()
-        if any(keyword in lowered for keyword in keywords)
-    ]
-    return sorted(matches)
+    return find_pattern_matches(text, patterns)
 
 
 def extract_target_role(cover_letter_text: str) -> str | None:
@@ -257,6 +335,8 @@ def build_search_focus(
     skills: list[str],
     domains: list[str],
     target_role_from_cover_letter: str | None,
+    *,
+    location: str | None,
 ) -> dict:
     priority_titles = ["Senior Data Analyst"]
 
@@ -287,7 +367,7 @@ def build_search_focus(
     return {
         "priority_titles": dedupe(priority_titles),
         "priority_domains": domains,
-        "location_preferences": ["Sydney", "NSW", "Australia", "Hybrid", "Remote"],
+        "location_preferences": build_location_preferences(location),
         "keywords_to_include": dedupe(keywords_to_include),
         "stretch_roles_to_treat_cautiously": [
             "Machine-learning-heavy Data Scientist roles",
@@ -295,6 +375,56 @@ def build_search_focus(
             "Roles that require deep BI tooling not shown in the CV",
         ],
     }
+
+
+def build_location_preferences(location: str | None) -> list[str]:
+    preferences: list[str] = []
+    if location:
+        preferences.extend(
+            part.strip()
+            for part in re.split(r"\s*,\s*", location)
+            if part.strip()
+        )
+    preferences.extend(["Hybrid", "Remote"])
+    return dedupe(preferences)
+
+
+def build_profile_quality_warnings(profile: dict) -> list[str]:
+    warnings: list[str] = []
+    if not profile.get("name"):
+        warnings.append("No clear candidate name was extracted from the CV or cover letter.")
+    if not profile.get("location"):
+        warnings.append("No location was extracted from the candidate documents.")
+    if not profile.get("email"):
+        warnings.append("No email address was extracted from the candidate documents.")
+    if not profile.get("summary"):
+        warnings.append("No professional summary was detected in the CV.")
+    if not profile.get("core_skills"):
+        warnings.append("No core skills were detected from the current CV and cover letter text.")
+    return warnings
+
+
+def looks_like_location_line(line: str) -> bool:
+    cleaned = line.replace("|", ",").strip()
+    if not cleaned or "@" in cleaned or len(cleaned.split()) > 8:
+        return False
+
+    lowered = cleaned.lower()
+    upper_tokens = {token.upper() for token in re.findall(r"[A-Za-z]{2,}", cleaned)}
+
+    if any(term in lowered for term in LOCATION_TERMS):
+        return True
+    if upper_tokens.intersection(AUSTRALIAN_STATE_CODES):
+        return True
+    if re.fullmatch(r"[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*,\s*[A-Z]{2,3}(?:,\s*[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)?", cleaned):
+        return True
+    if re.fullmatch(r"[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*,\s*[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*", cleaned):
+        return True
+    return False
+
+
+def normalize_location_line(line: str) -> str:
+    return re.sub(r"\s+", " ", line.replace("|", ",")).strip(", ")
 
 
 def dedupe(values: list[str]) -> list[str]:

@@ -6,11 +6,14 @@ import unittest
 from pathlib import Path
 
 from offerquest.cover_letter import (
+    build_cover_letter_text,
     generate_cover_letter_for_job_record,
     generate_cover_letter_for_job_record_llm,
     generate_cover_letters_from_ranking,
+    select_top_unique_rankings,
     write_cover_letter,
 )
+from offerquest.errors import ProfileValidationError
 
 
 class CoverLetterTests(unittest.TestCase):
@@ -172,6 +175,55 @@ class CoverLetterTests(unittest.TestCase):
         self.assertEqual(payload["llm_provider"], "ollama")
         self.assertEqual(payload["llm_model"], "qwen3:8b")
         self.assertIn("Consulting environment", payload["employer_specific_focus"])
+
+    def test_build_cover_letter_text_requires_candidate_name(self) -> None:
+        with self.assertRaises(ProfileValidationError):
+            build_cover_letter_text(
+                profile={
+                    "name": None,
+                    "core_skills": ["SQL", "Reporting"],
+                    "domains": [],
+                    "recent_roles": [],
+                    "summary": "Analyst",
+                },
+                ats_report={
+                    "keyword_coverage": {"matched_keywords": ["SQL"]},
+                    "required_keywords": {"missing": []},
+                },
+                job_context={"job_title": "Data Analyst", "company": "Acme"},
+            )
+
+    def test_build_cover_letter_text_avoids_hard_coded_identity_details(self) -> None:
+        text = build_cover_letter_text(
+            profile={
+                "name": "Jane Doe",
+                "location": None,
+                "years_experience": None,
+                "summary": "Analyst with experience in SQL reporting and process improvement.",
+                "core_skills": ["SQL", "Reporting"],
+                "domains": ["Public sector"],
+                "recent_roles": [],
+            },
+            ats_report={
+                "keyword_coverage": {"matched_keywords": ["SQL", "Reporting"]},
+                "required_keywords": {"missing": []},
+            },
+            job_context={"job_title": "Data Analyst", "company": "Acme"},
+        )
+
+        self.assertIn("Jane Doe", text)
+        self.assertNotIn("Bulat Faezov", text)
+        self.assertNotIn("Sydney, NSW, Australia", text)
+
+    def test_select_top_unique_rankings_keeps_same_title_different_locations(self) -> None:
+        rankings = [
+            {"job_id": "1", "company": "BigCo", "job_title": "Data Analyst", "location": "Sydney"},
+            {"job_id": "2", "company": "BigCo", "job_title": "Data Analyst", "location": "Melbourne"},
+        ]
+
+        selected = select_top_unique_rankings(rankings, limit=5)
+
+        self.assertEqual(len(selected), 2)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,20 @@ With best regards,
 Bulat Faezov
 """
 
+GENERAL_CV_TEXT = """JANE A. DOE
+Melbourne, VIC, Australia
+jane.doe@example.com
+Professional Summary
+Senior analyst with experience in SQL reporting, stakeholder communication, and public-sector delivery.
+Core Skills
+SQL
+Reporting
+Stakeholder collaboration
+Professional Experience
+Department of Education
+Senior Reporting Analyst | 2025
+"""
+
 
 class ProfileTests(unittest.TestCase):
     def test_build_candidate_profile_extracts_core_data(self) -> None:
@@ -59,6 +73,14 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue(titles[0].startswith("Senior Metadata"))
         self.assertIn("Senior Data Analyst", titles)
         self.assertIn("Metadata Analyst / Data Governance Analyst", titles)
+
+    def test_build_candidate_profile_generalizes_name_and_location(self) -> None:
+        profile = build_candidate_profile(GENERAL_CV_TEXT, "")
+
+        self.assertEqual(profile["name"], "Jane A. Doe")
+        self.assertEqual(profile["location"], "Melbourne, VIC, Australia")
+        self.assertIn("Melbourne", profile["search_focus"]["location_preferences"])
+        self.assertIn("VIC", profile["search_focus"]["location_preferences"])
 
 
 if __name__ == "__main__":

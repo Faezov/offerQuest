@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "offerquest"
+version = "0.1.0"
+description = "Job-fit analysis, ATS checks, and cover-letter generation tooling."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+offerquest = "offerquest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["offerquest*"]

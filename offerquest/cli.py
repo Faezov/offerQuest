@@ -14,6 +14,7 @@ from .cover_letter import (
     write_cover_letter,
 )
 from .docx import export_document_as_docx
+from .errors import OfferQuestError
 from .jobs import (
     collect_job_record_inputs,
     fetch_adzuna_jobs,
@@ -27,6 +28,7 @@ from .jobs import (
 from .ollama import DEFAULT_OLLAMA_BASE_URL, get_ollama_status
 from .profile import build_profile_from_files
 from .scoring import rank_job_files, rank_job_records, score_job_file
+from .workspace import ProjectState
 
 SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 
@@ -200,247 +202,359 @@ def add_profile_reuse_arguments(parser: argparse.ArgumentParser) -> None:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    project_state = ProjectState.from_root(Path.cwd())
 
-    if args.command == "build-profile":
-        profile = build_profile_from_files(args.cv, args.cover_letter)
-        write_optional_json(args.output, profile)
-        print(json.dumps(profile, indent=2))
-        return 0
+    try:
+        if args.command == "build-profile":
+            profile = build_profile_from_files(args.cv, args.cover_letter)
+            write_optional_json(args.output, profile)
+            maybe_record_run(
+                project_state,
+                "build-profile",
+                output_path=args.output,
+                artifact_kind="profile",
+                metadata={"source_files": profile.get("source_files", {})},
+                label=args.output.stem if args.output else None,
+            )
+            print(json.dumps(profile, indent=2))
+            return 0
 
-    if args.command == "export-docx":
-        export_document_as_docx(args.input, args.output)
-        print(
-            json.dumps(
-                {
-                    "source": str(args.input),
-                    "output": str(args.output),
+        if args.command == "export-docx":
+            export_document_as_docx(args.input, args.output)
+            record_run(
+                project_state,
+                "export-docx",
+                artifacts=[{"kind": "document", "path": args.output}],
+                metadata={"source": str(args.input)},
+                label=args.output.stem,
+            )
+            print(
+                json.dumps(
+                    {
+                        "source": str(args.input),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
+
+        if args.command == "generate-cover-letter":
+            if args.job:
+                payload = generate_cover_letter_for_job_file(
+                    args.cv,
+                    args.job,
+                    base_cover_letter_path=args.base_cover_letter,
+                )
+            else:
+                if not args.job_id:
+                    parser.error("--job-id is required when using --jobs-file")
+                jobs = read_job_records(args.jobs_file)
+                job_record = find_job_record(jobs, args.job_id)
+                if job_record is None:
+                    parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
+                payload = generate_cover_letter_for_job_record(
+                    args.cv,
+                    job_record,
+                    base_cover_letter_path=args.base_cover_letter,
+                )
+
+            write_cover_letter(args.output, payload)
+            record_run(
+                project_state,
+                "generate-cover-letter",
+                artifacts=[{"kind": "cover_letter", "path": args.output}],
+                metadata={
+                    "job_title": payload.get("job_title"),
+                    "company": payload.get("company"),
+                    "job_id": payload.get("job_id"),
                 },
-                indent=2,
+                label=args.output.stem,
             )
-        )
-        return 0
+            print(
+                json.dumps(
+                    {
+                        "job_title": payload.get("job_title"),
+                        "company": payload.get("company"),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
 
-    if args.command == "generate-cover-letter":
-        if args.job:
-            payload = generate_cover_letter_for_job_file(
-                args.cv,
-                args.job,
-                base_cover_letter_path=args.base_cover_letter,
-            )
-        else:
+        if args.command == "generate-cover-letter-llm":
+            if args.job:
+                parser.error("--job is not yet supported for generate-cover-letter-llm; use --jobs-file and --job-id")
             if not args.job_id:
                 parser.error("--job-id is required when using --jobs-file")
             jobs = read_job_records(args.jobs_file)
             job_record = find_job_record(jobs, args.job_id)
             if job_record is None:
                 parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
-            payload = generate_cover_letter_for_job_record(
+            payload = generate_cover_letter_for_job_record_llm(
                 args.cv,
                 job_record,
                 base_cover_letter_path=args.base_cover_letter,
+                employer_context_path=args.employer_context,
+                model=args.model,
+                base_url=args.base_url,
+                timeout_seconds=args.timeout_seconds,
             )
-
-        write_cover_letter(args.output, payload)
-        print(
-            json.dumps(
-                {
+            write_cover_letter(args.output, payload)
+            record_run(
+                project_state,
+                "generate-cover-letter-llm",
+                artifacts=[{"kind": "llm_cover_letter", "path": args.output}],
+                metadata={
                     "job_title": payload.get("job_title"),
                     "company": payload.get("company"),
-                    "output": str(args.output),
+                    "job_id": payload.get("job_id"),
+                    "llm_model": payload.get("llm_model"),
                 },
-                indent=2,
+                label=args.output.stem,
             )
-        )
-        return 0
-
-    if args.command == "generate-cover-letter-llm":
-        if args.job:
-            parser.error("--job is not yet supported for generate-cover-letter-llm; use --jobs-file and --job-id")
-        if not args.job_id:
-            parser.error("--job-id is required when using --jobs-file")
-        jobs = read_job_records(args.jobs_file)
-        job_record = find_job_record(jobs, args.job_id)
-        if job_record is None:
-            parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
-        payload = generate_cover_letter_for_job_record_llm(
-            args.cv,
-            job_record,
-            base_cover_letter_path=args.base_cover_letter,
-            employer_context_path=args.employer_context,
-            model=args.model,
-            base_url=args.base_url,
-            timeout_seconds=args.timeout_seconds,
-        )
-        write_cover_letter(args.output, payload)
-        print(
-            json.dumps(
-                {
-                    "job_title": payload.get("job_title"),
-                    "company": payload.get("company"),
-                    "model": payload.get("llm_model"),
-                    "output": str(args.output),
-                },
-                indent=2,
+            print(
+                json.dumps(
+                    {
+                        "job_title": payload.get("job_title"),
+                        "company": payload.get("company"),
+                        "model": payload.get("llm_model"),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
             )
-        )
-        return 0
+            return 0
 
-    if args.command == "generate-cover-letters":
-        summary = generate_cover_letters_from_ranking(
-            args.cv,
-            args.jobs_file,
-            args.ranking_file,
-            args.output_dir,
-            base_cover_letter_path=args.base_cover_letter,
-            top_n=args.top,
-            export_docx=args.docx,
-        )
-        print(json.dumps(summary, indent=2))
-        return 0
-
-    if args.command == "generate-cover-letters-llm":
-        summary = generate_cover_letters_from_ranking_llm(
-            args.cv,
-            args.jobs_file,
-            args.ranking_file,
-            args.output_dir,
-            base_cover_letter_path=args.base_cover_letter,
-            employer_context_dir=args.employer_context_dir,
-            top_n=args.top,
-            export_docx=args.docx,
-            model=args.model,
-            base_url=args.base_url,
-            timeout_seconds=args.timeout_seconds,
-        )
-        print(json.dumps(summary, indent=2))
-        return 0
-
-    if args.command == "ollama-status":
-        print(json.dumps(get_ollama_status(args.base_url), indent=2))
-        return 0
-
-    if args.command == "ats-check":
-        if args.job:
-            report = ats_check_job_file(
+        if args.command == "generate-cover-letters":
+            summary = generate_cover_letters_from_ranking(
                 args.cv,
-                args.job,
-                cover_letter_path=args.cover_letter,
+                args.jobs_file,
+                args.ranking_file,
+                args.output_dir,
+                base_cover_letter_path=args.base_cover_letter,
+                top_n=args.top,
+                export_docx=args.docx,
             )
-        else:
-            if not args.job_id:
-                parser.error("--job-id is required when using --jobs-file")
-            jobs = read_job_records(args.jobs_file)
-            job_record = find_job_record(jobs, args.job_id)
-            if job_record is None:
-                parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
-            report = ats_check_job_record(
+            record_run(
+                project_state,
+                "generate-cover-letters",
+                artifacts=[{"kind": "cover_letter_batch", "path": Path(args.output_dir) / "summary.json"}],
+                metadata={"output_dir": str(args.output_dir), "job_count": summary.get("job_count")},
+                label=Path(args.output_dir).name,
+            )
+            print(json.dumps(summary, indent=2))
+            return 0
+
+        if args.command == "generate-cover-letters-llm":
+            summary = generate_cover_letters_from_ranking_llm(
                 args.cv,
-                job_record,
-                cover_letter_path=args.cover_letter,
+                args.jobs_file,
+                args.ranking_file,
+                args.output_dir,
+                base_cover_letter_path=args.base_cover_letter,
+                employer_context_dir=args.employer_context_dir,
+                top_n=args.top,
+                export_docx=args.docx,
+                model=args.model,
+                base_url=args.base_url,
+                timeout_seconds=args.timeout_seconds,
             )
-
-        write_optional_json(args.output, report)
-        print(json.dumps(report, indent=2))
-        return 0
-
-    if args.command == "fetch-adzuna":
-        app_id, app_key = resolve_adzuna_credentials(args.app_id, args.app_key)
-        if not app_id or not app_key:
-            parser.error("Adzuna credentials are required via --app-id/--app-key or ADZUNA_APP_ID/ADZUNA_APP_KEY")
-
-        jobs = fetch_adzuna_jobs(
-            app_id=app_id,
-            app_key=app_key,
-            what=args.what,
-            where=args.where,
-            country=args.country,
-            page=args.page,
-            results_per_page=args.results_per_page,
-        )
-        write_job_records(args.output, jobs)
-        print(
-            json.dumps(
-                {
-                    "source": "adzuna",
-                    "job_count": len(jobs),
-                    "output": str(args.output),
+            record_run(
+                project_state,
+                "generate-cover-letters-llm",
+                artifacts=[{"kind": "llm_cover_letter_batch", "path": Path(args.output_dir) / "summary.json"}],
+                metadata={
+                    "output_dir": str(args.output_dir),
+                    "job_count": summary.get("job_count"),
+                    "llm_model": summary.get("llm_model"),
                 },
-                indent=2,
+                label=Path(args.output_dir).name,
             )
-        )
-        return 0
+            print(json.dumps(summary, indent=2))
+            return 0
 
-    if args.command == "fetch-greenhouse":
-        jobs = fetch_greenhouse_jobs(args.board_token)
-        write_job_records(args.output, jobs)
-        print(
-            json.dumps(
-                {
-                    "source": "greenhouse",
-                    "board_token": args.board_token,
-                    "job_count": len(jobs),
-                    "output": str(args.output),
-                },
-                indent=2,
+        if args.command == "ollama-status":
+            print(json.dumps(get_ollama_status(args.base_url), indent=2))
+            return 0
+
+        if args.command == "ats-check":
+            if args.job:
+                report = ats_check_job_file(
+                    args.cv,
+                    args.job,
+                    cover_letter_path=args.cover_letter,
+                )
+            else:
+                if not args.job_id:
+                    parser.error("--job-id is required when using --jobs-file")
+                jobs = read_job_records(args.jobs_file)
+                job_record = find_job_record(jobs, args.job_id)
+                if job_record is None:
+                    parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
+                report = ats_check_job_record(
+                    args.cv,
+                    job_record,
+                    cover_letter_path=args.cover_letter,
+                )
+
+            write_optional_json(args.output, report)
+            maybe_record_run(
+                project_state,
+                "ats-check",
+                output_path=args.output,
+                artifact_kind="ats_report",
+                metadata={"job_title": report.get("job_title"), "assessment": report.get("assessment")},
+                label=args.output.stem if args.output else None,
             )
-        )
-        return 0
+            print(json.dumps(report, indent=2))
+            return 0
 
-    if args.command == "import-manual-jobs":
-        jobs = import_manual_jobs(args.input_path)
-        write_job_records(args.output, jobs)
-        print(
-            json.dumps(
-                {
-                    "source": "manual",
-                    "job_count": len(jobs),
-                    "output": str(args.output),
-                },
-                indent=2,
+        if args.command == "fetch-adzuna":
+            app_id, app_key = resolve_adzuna_credentials(args.app_id, args.app_key)
+            if not app_id or not app_key:
+                parser.error("Adzuna credentials are required via --app-id/--app-key or ADZUNA_APP_ID/ADZUNA_APP_KEY")
+
+            jobs = fetch_adzuna_jobs(
+                app_id=app_id,
+                app_key=app_key,
+                what=args.what,
+                where=args.where,
+                country=args.country,
+                page=args.page,
+                results_per_page=args.results_per_page,
             )
-        )
-        return 0
-
-    if args.command == "merge-jobs":
-        jobs = collect_job_record_inputs(args.inputs)
-        write_job_records(args.output, jobs)
-        print(
-            json.dumps(
-                {
-                    "source": "merged",
-                    "job_count": len(jobs),
-                    "output": str(args.output),
-                },
-                indent=2,
+            write_job_records(args.output, jobs)
+            record_run(
+                project_state,
+                "fetch-adzuna",
+                artifacts=[{"kind": "jobs_file", "path": args.output}],
+                metadata={"source": "adzuna", "job_count": len(jobs)},
+                label=args.output.stem,
             )
-        )
-        return 0
+            print(
+                json.dumps(
+                    {
+                        "source": "adzuna",
+                        "job_count": len(jobs),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
 
-    profile = load_profile(args, parser)
+        if args.command == "fetch-greenhouse":
+            jobs = fetch_greenhouse_jobs(args.board_token)
+            write_job_records(args.output, jobs)
+            record_run(
+                project_state,
+                "fetch-greenhouse",
+                artifacts=[{"kind": "jobs_file", "path": args.output}],
+                metadata={"source": "greenhouse", "job_count": len(jobs), "board_token": args.board_token},
+                label=args.output.stem,
+            )
+            print(
+                json.dumps(
+                    {
+                        "source": "greenhouse",
+                        "board_token": args.board_token,
+                        "job_count": len(jobs),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
 
-    if args.command == "score-job":
-        result = score_job_file(args.job, profile)
-        write_optional_json(args.output, result)
-        print(json.dumps(result, indent=2))
-        return 0
+        if args.command == "import-manual-jobs":
+            jobs = import_manual_jobs(args.input_path)
+            write_job_records(args.output, jobs)
+            record_run(
+                project_state,
+                "import-manual-jobs",
+                artifacts=[{"kind": "jobs_file", "path": args.output}],
+                metadata={"source": "manual", "job_count": len(jobs), "input_path": str(args.input_path)},
+                label=args.output.stem,
+            )
+            print(
+                json.dumps(
+                    {
+                        "source": "manual",
+                        "job_count": len(jobs),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
 
-    if args.command == "rank-jobs":
-        if args.jobs_file:
-            jobs = read_job_records(args.jobs_file)
-            results = rank_job_records(jobs, profile)
-        else:
-            job_paths = collect_job_paths(args.jobs_dir)
-            results = rank_job_files(job_paths, profile)
-        payload = {
-            "job_count": len(results),
-            "rankings": results,
-        }
-        write_optional_json(args.output, payload)
-        print(json.dumps(payload, indent=2))
-        return 0
+        if args.command == "merge-jobs":
+            jobs = collect_job_record_inputs(args.inputs)
+            write_job_records(args.output, jobs)
+            record_run(
+                project_state,
+                "merge-jobs",
+                artifacts=[{"kind": "jobs_file", "path": args.output}],
+                metadata={"source": "merged", "job_count": len(jobs)},
+                label=args.output.stem,
+            )
+            print(
+                json.dumps(
+                    {
+                        "source": "merged",
+                        "job_count": len(jobs),
+                        "output": str(args.output),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
 
-    parser.error(f"Unsupported command: {args.command}")
-    return 2
+        profile = load_profile(args, parser)
+
+        if args.command == "score-job":
+            result = score_job_file(args.job, profile)
+            write_optional_json(args.output, result)
+            maybe_record_run(
+                project_state,
+                "score-job",
+                output_path=args.output,
+                artifact_kind="job_score",
+                metadata={"job_title": result.get("job_title"), "score": result.get("score")},
+                label=args.output.stem if args.output else None,
+            )
+            print(json.dumps(result, indent=2))
+            return 0
+
+        if args.command == "rank-jobs":
+            if args.jobs_file:
+                jobs = read_job_records(args.jobs_file)
+                results = rank_job_records(jobs, profile)
+            else:
+                job_paths = collect_job_paths(args.jobs_dir)
+                results = rank_job_files(job_paths, profile)
+            payload = {
+                "job_count": len(results),
+                "rankings": results,
+            }
+            write_optional_json(args.output, payload)
+            maybe_record_run(
+                project_state,
+                "rank-jobs",
+                output_path=args.output,
+                artifact_kind="ranking",
+                metadata={"job_count": payload["job_count"]},
+                label=args.output.stem if args.output else None,
+            )
+            print(json.dumps(payload, indent=2))
+            return 0
+
+        parser.error(f"Unsupported command: {args.command}")
+        return 2
+    except OfferQuestError as exc:
+        parser.exit(2, f"error: {exc}\n")
 
 
 def load_profile(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
@@ -469,3 +583,39 @@ def write_optional_json(path: Path | None, payload: object) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def maybe_record_run(
+    project_state: ProjectState,
+    workflow: str,
+    *,
+    output_path: Path | None,
+    artifact_kind: str,
+    metadata: dict[str, object] | None = None,
+    label: str | None = None,
+) -> None:
+    if output_path is None:
+        return
+    record_run(
+        project_state,
+        workflow,
+        artifacts=[{"kind": artifact_kind, "path": output_path}],
+        metadata=metadata,
+        label=label,
+    )
+
+
+def record_run(
+    project_state: ProjectState,
+    workflow: str,
+    *,
+    artifacts: list[dict[str, object]],
+    metadata: dict[str, object] | None = None,
+    label: str | None = None,
+) -> None:
+    project_state.record_run(
+        workflow,
+        artifacts=artifacts,
+        metadata=metadata,
+        label=label,
+    )

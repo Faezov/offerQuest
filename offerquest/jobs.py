@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import html
 import json
 import os
 import re
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +15,8 @@ from urllib.request import Request, urlopen
 
 from .extractors import normalize_text, read_document_text
 
+ADZUNA_ENV_PATH_ENVVAR = "OFFERQUEST_ADZUNA_ENV_FILE"
+ADZUNA_ENV_FILENAME = "adzuna.env"
 SUPPORTED_MANUAL_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 SUPPORTED_JOB_RECORD_SUFFIXES = {".json", ".jsonl"}
 
@@ -701,6 +705,148 @@ def drop_none(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if value not in (None, "", [], {})}
 
 
+def get_adzuna_env_path(raw_path: str | Path | None = None) -> Path:
+    if raw_path is not None:
+        return Path(raw_path).expanduser().resolve()
+
+    env_override = os.getenv(ADZUNA_ENV_PATH_ENVVAR)
+    if env_override:
+        return Path(env_override).expanduser().resolve()
+
+    return (Path.home() / ".config" / "offerquest" / ADZUNA_ENV_FILENAME).resolve()
+
+
+def read_env_assignments(path: str | Path) -> dict[str, str]:
+    env_path = Path(path)
+    if not env_path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = parse_env_assignment_value(raw_value)
+
+    return values
+
+
+def parse_env_assignment_value(raw_value: str) -> str:
+    value = raw_value.strip()
+    if not value:
+        return ""
+    if value[0] in {'"', "'"}:
+        try:
+            return str(ast.literal_eval(value))
+        except (SyntaxError, ValueError):
+            return value.strip("'\"")
+    return value
+
+
+def load_adzuna_credentials_file(
+    raw_path: str | Path | None = None,
+) -> dict[str, str]:
+    values = read_env_assignments(get_adzuna_env_path(raw_path))
+    return {
+        "ADZUNA_APP_ID": values.get("ADZUNA_APP_ID", ""),
+        "ADZUNA_APP_KEY": values.get("ADZUNA_APP_KEY", ""),
+    }
+
+
+def load_adzuna_credentials_status(
+    raw_path: str | Path | None = None,
+) -> dict[str, Any]:
+    env_path = get_adzuna_env_path(raw_path)
+    saved = load_adzuna_credentials_file(env_path)
+    env_app_id = os.getenv("ADZUNA_APP_ID")
+    env_app_key = os.getenv("ADZUNA_APP_KEY")
+    saved_app_id = saved.get("ADZUNA_APP_ID") or None
+    saved_app_key = saved.get("ADZUNA_APP_KEY") or None
+    effective_app_id = env_app_id or saved_app_id
+    effective_app_key = env_app_key or saved_app_key
+
+    if env_app_id or env_app_key:
+        effective_source = "environment"
+    elif effective_app_id or effective_app_key:
+        effective_source = "credentials_file"
+    else:
+        effective_source = "missing"
+
+    return {
+        "path": env_path,
+        "file_exists": env_path.exists(),
+        "saved_app_id": saved_app_id,
+        "saved_app_key": saved_app_key,
+        "saved_app_id_masked": mask_secret(saved_app_id),
+        "saved_app_key_masked": mask_secret(saved_app_key),
+        "has_saved_credentials": bool(saved_app_id and saved_app_key),
+        "effective_app_id": effective_app_id,
+        "effective_app_key": effective_app_key,
+        "effective_app_id_masked": mask_secret(effective_app_id),
+        "effective_app_key_masked": mask_secret(effective_app_key),
+        "has_effective_credentials": bool(effective_app_id and effective_app_key),
+        "effective_source": effective_source,
+        "is_env_override": effective_source == "environment",
+    }
+
+
+def write_adzuna_credentials_file(
+    app_id: str,
+    app_key: str,
+    *,
+    raw_path: str | Path | None = None,
+) -> Path:
+    normalized_app_id = string_or_none(app_id)
+    normalized_app_key = string_or_none(app_key)
+    if not normalized_app_id or not normalized_app_key:
+        raise ValueError("Both Adzuna app id and app key are required.")
+
+    env_path = get_adzuna_env_path(raw_path)
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        "# OfferQuest Adzuna credentials\n"
+        f"ADZUNA_APP_ID={json.dumps(normalized_app_id)}\n"
+        f"ADZUNA_APP_KEY={json.dumps(normalized_app_key)}\n"
+    )
+
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=env_path.parent,
+        delete=False,
+    ) as handle:
+        handle.write(content)
+        temporary_path = Path(handle.name)
+
+    try:
+        os.chmod(temporary_path, 0o600)
+    except OSError:
+        pass
+    temporary_path.replace(env_path)
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
+    return env_path
+
+
+def mask_secret(value: str | None, *, head: int = 4, tail: int = 2) -> str | None:
+    if value is None:
+        return None
+    if len(value) <= head + tail:
+        return "*" * len(value)
+    return f"{value[:head]}{'*' * (len(value) - head - tail)}{value[-tail:]}"
+
+
 def resolve_workspace_path(root: Path, raw_path: str | Path) -> Path:
     path = Path(raw_path)
     if path.is_absolute():
@@ -732,4 +878,8 @@ def resolve_adzuna_credentials(
     app_id: str | None,
     app_key: str | None,
 ) -> tuple[str | None, str | None]:
-    return app_id or os.getenv("ADZUNA_APP_ID"), app_key or os.getenv("ADZUNA_APP_KEY")
+    file_credentials = load_adzuna_credentials_file()
+    return (
+        app_id or os.getenv("ADZUNA_APP_ID") or string_or_none(file_credentials.get("ADZUNA_APP_ID")),
+        app_key or os.getenv("ADZUNA_APP_KEY") or string_or_none(file_credentials.get("ADZUNA_APP_KEY")),
+    )

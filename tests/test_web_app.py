@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 class WebAppTests(unittest.TestCase):
@@ -135,6 +136,65 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Latest Ranking Output", response.text)
         self.assertIn("Rerank Top Jobs", response.text)
+
+    def test_job_sources_page_renders(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (jobs_dir / "sources.json").write_text(
+                '{"sources": [{"name": "adzuna-reporting", "type": "adzuna", "what": "reporting analyst", "where": "Sydney", "output": "adzuna-reporting.jsonl"}]}',
+                encoding="utf-8",
+            )
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            response = client.get("/job-sources")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Adzuna Credentials", response.text)
+        self.assertIn("Configured Job Streams", response.text)
+
+    def test_job_sources_submit_saves_credentials_file(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            env_path = Path(tmpdir) / "adzuna.env"
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            with patch.dict(
+                "os.environ",
+                {"OFFERQUEST_ADZUNA_ENV_FILE": str(env_path)},
+                clear=False,
+            ):
+                response = client.post(
+                    "/job-sources",
+                    data={
+                        "app_id": "saved-app-id",
+                        "app_key": "saved-app-key",
+                    },
+                )
+
+            saved_text = env_path.read_text(encoding="utf-8")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Saved credentials file", response.text)
+        self.assertIn("saved-app-id", saved_text)
+        self.assertIn("saved-app-key", saved_text)
 
     def test_rerank_jobs_page_renders(self) -> None:
         try:

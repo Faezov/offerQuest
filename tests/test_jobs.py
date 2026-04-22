@@ -13,11 +13,15 @@ from offerquest.jobs import (
     fetch_greenhouse_jobs,
     import_manual_jobs,
     job_record_to_text,
+    load_adzuna_credentials_file,
+    load_adzuna_credentials_status,
     merge_job_record_sets,
     normalize_adzuna_job,
     normalize_greenhouse_job,
     read_job_records,
     refresh_job_sources,
+    resolve_adzuna_credentials,
+    write_adzuna_credentials_file,
     write_job_records,
 )
 from offerquest.scoring import score_job_record
@@ -253,6 +257,46 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["company"], "Example Org")
         self.assertEqual(fetch_json_mock.call_count, 2)
+
+    def test_write_and_load_adzuna_credentials_file_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / "adzuna.env"
+            saved_path = write_adzuna_credentials_file(
+                "app-1234",
+                "key-!@#'42",
+                raw_path=env_path,
+            )
+
+            credentials = load_adzuna_credentials_file(env_path)
+            status = load_adzuna_credentials_status(env_path)
+
+        self.assertEqual(saved_path, env_path.resolve())
+        self.assertEqual(credentials["ADZUNA_APP_ID"], "app-1234")
+        self.assertEqual(credentials["ADZUNA_APP_KEY"], "key-!@#'42")
+        self.assertTrue(status["file_exists"])
+        self.assertTrue(status["has_saved_credentials"])
+        self.assertEqual(status["saved_app_id_masked"], "app-**34")
+
+    def test_resolve_adzuna_credentials_falls_back_to_saved_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = Path(tmpdir) / "adzuna.env"
+            write_adzuna_credentials_file(
+                "saved-app",
+                "saved-key",
+                raw_path=env_path,
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "OFFERQUEST_ADZUNA_ENV_FILE": str(env_path),
+                },
+                clear=True,
+            ):
+                app_id, app_key = resolve_adzuna_credentials(None, None)
+
+        self.assertEqual(app_id, "saved-app")
+        self.assertEqual(app_key, "saved-key")
 
     def test_score_job_record_keeps_record_context(self) -> None:
         profile = {

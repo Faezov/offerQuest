@@ -7,6 +7,7 @@ from pathlib import Path
 
 from offerquest.cover_letter import (
     generate_cover_letter_for_job_record,
+    generate_cover_letter_for_job_record_llm,
     generate_cover_letters_from_ranking,
     write_cover_letter,
 )
@@ -135,6 +136,42 @@ class CoverLetterTests(unittest.TestCase):
         self.assertTrue(any(item["company"] == "HAYS" for item in summary["items"]))
         self.assertTrue(all("docx_path" in item for item in summary["items"]))
         self.assertTrue(all(item_docx_paths))
+
+    def test_generate_cover_letter_for_job_record_llm_uses_structured_response(self) -> None:
+        job_record = {
+            "id": "adzuna:123",
+            "source": "adzuna",
+            "title": "Senior Data Analyst",
+            "company": "Mane Consulting",
+            "location": "Sydney",
+            "url": "https://example.com/jobs/123",
+            "description_text": (
+                "Senior Data Analyst\n"
+                "Mane Consulting, Sydney\n"
+                "Required skills: reporting, automation, SQL.\n"
+            ),
+        }
+
+        with unittest.mock.patch(
+            "offerquest.cover_letter.generate_structured_response",
+            return_value={
+                "resume_headline": "Senior Data Analyst",
+                "employer_specific_focus": ["Consulting environment", "Reporting reliability"],
+                "evidence_used": ["Python and SQL automation", "Healthcare and research reporting"],
+                "caution_flags": [],
+                "cover_letter_text": "Dear Hiring Team,\n\nExample.\n\nWith best regards,\nBulat Faezov",
+            },
+        ):
+            payload = generate_cover_letter_for_job_record_llm(
+                "data/CV_BF_20260415.docx",
+                job_record,
+                base_cover_letter_path="data/CL_BF_20260415.doc",
+                model="qwen3:8b",
+            )
+
+        self.assertEqual(payload["llm_provider"], "ollama")
+        self.assertEqual(payload["llm_model"], "qwen3:8b")
+        self.assertIn("Consulting environment", payload["employer_specific_focus"])
 
 
 if __name__ == "__main__":

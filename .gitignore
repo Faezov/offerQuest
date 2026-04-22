@@ -4,4 +4,6 @@ __pycache__/
 .codex
 extracted/
 outputs/
-
+.ollama-home/
+.tools/ollama/
+.tools/ollama-partial/

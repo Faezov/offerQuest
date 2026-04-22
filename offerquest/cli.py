@@ -8,7 +8,9 @@ from .ats import ats_check_job_file, ats_check_job_record
 from .cover_letter import (
     generate_cover_letter_for_job_file,
     generate_cover_letter_for_job_record,
+    generate_cover_letter_for_job_record_llm,
     generate_cover_letters_from_ranking,
+    generate_cover_letters_from_ranking_llm,
     write_cover_letter,
 )
 from .docx import export_document_as_docx
@@ -22,6 +24,7 @@ from .jobs import (
     resolve_adzuna_credentials,
     write_job_records,
 )
+from .ollama import DEFAULT_OLLAMA_BASE_URL, get_ollama_status
 from .profile import build_profile_from_files
 from .scoring import rank_job_files, rank_job_records, score_job_file
 
@@ -66,6 +69,21 @@ def build_parser() -> argparse.ArgumentParser:
     cover_letter_parser.add_argument("--job-id", help="Job id inside --jobs-file")
     cover_letter_parser.add_argument("--output", type=Path, required=True, help="Write generated cover letter to this path")
 
+    cover_letter_llm_parser = subparsers.add_parser(
+        "generate-cover-letter-llm",
+        help="Generate an employer-specific cover letter draft with a local Ollama model",
+    )
+    cover_letter_llm_parser.add_argument("--cv", type=Path, required=True, help="CV file")
+    cover_letter_llm_parser.add_argument("--base-cover-letter", type=Path, help="Optional source cover letter for tone and context")
+    cover_letter_llm_parser.add_argument("--employer-context", type=Path, help="Optional employer-specific notes file")
+    cover_letter_llm_parser.add_argument("--model", default="qwen3:8b", help="Ollama model name, default: qwen3:8b")
+    cover_letter_llm_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
+    cover_letter_llm_job_group = cover_letter_llm_parser.add_mutually_exclusive_group(required=True)
+    cover_letter_llm_job_group.add_argument("--job", type=Path, help="Raw job description file")
+    cover_letter_llm_job_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
+    cover_letter_llm_parser.add_argument("--job-id", help="Job id inside --jobs-file")
+    cover_letter_llm_parser.add_argument("--output", type=Path, required=True, help="Write generated cover letter to this path")
+
     cover_letters_parser = subparsers.add_parser(
         "generate-cover-letters",
         help="Generate cover letter drafts for the top ranked jobs",
@@ -77,6 +95,27 @@ def build_parser() -> argparse.ArgumentParser:
     cover_letters_parser.add_argument("--output-dir", type=Path, required=True, help="Directory for generated cover letters")
     cover_letters_parser.add_argument("--top", type=int, default=5, help="How many top unique jobs to generate, default: 5")
     cover_letters_parser.add_argument("--docx", action="store_true", help="Also export each generated letter as .docx")
+
+    cover_letters_llm_parser = subparsers.add_parser(
+        "generate-cover-letters-llm",
+        help="Generate employer-specific cover letters for the top ranked jobs with a local Ollama model",
+    )
+    cover_letters_llm_parser.add_argument("--cv", type=Path, required=True, help="CV file")
+    cover_letters_llm_parser.add_argument("--base-cover-letter", type=Path, help="Optional source cover letter for tone and context")
+    cover_letters_llm_parser.add_argument("--employer-context-dir", type=Path, help="Optional directory of employer-specific notes named after slugified companies")
+    cover_letters_llm_parser.add_argument("--jobs-file", type=Path, required=True, help="JSON or JSONL file of normalized job records")
+    cover_letters_llm_parser.add_argument("--ranking-file", type=Path, required=True, help="Ranking JSON file produced by rank-jobs")
+    cover_letters_llm_parser.add_argument("--output-dir", type=Path, required=True, help="Directory for generated cover letters")
+    cover_letters_llm_parser.add_argument("--top", type=int, default=5, help="How many top unique jobs to generate, default: 5")
+    cover_letters_llm_parser.add_argument("--docx", action="store_true", help="Also export each generated letter as .docx")
+    cover_letters_llm_parser.add_argument("--model", default="qwen3:8b", help="Ollama model name, default: qwen3:8b")
+    cover_letters_llm_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
+
+    ollama_status_parser = subparsers.add_parser(
+        "ollama-status",
+        help="Check whether a local Ollama server is reachable and list available models",
+    )
+    ollama_status_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
 
     ats_parser = subparsers.add_parser(
         "ats-check",
@@ -212,6 +251,37 @@ def main() -> int:
         )
         return 0
 
+    if args.command == "generate-cover-letter-llm":
+        if args.job:
+            parser.error("--job is not yet supported for generate-cover-letter-llm; use --jobs-file and --job-id")
+        if not args.job_id:
+            parser.error("--job-id is required when using --jobs-file")
+        jobs = read_job_records(args.jobs_file)
+        job_record = find_job_record(jobs, args.job_id)
+        if job_record is None:
+            parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
+        payload = generate_cover_letter_for_job_record_llm(
+            args.cv,
+            job_record,
+            base_cover_letter_path=args.base_cover_letter,
+            employer_context_path=args.employer_context,
+            model=args.model,
+            base_url=args.base_url,
+        )
+        write_cover_letter(args.output, payload)
+        print(
+            json.dumps(
+                {
+                    "job_title": payload.get("job_title"),
+                    "company": payload.get("company"),
+                    "model": payload.get("llm_model"),
+                    "output": str(args.output),
+                },
+                indent=2,
+            )
+        )
+        return 0
+
     if args.command == "generate-cover-letters":
         summary = generate_cover_letters_from_ranking(
             args.cv,
@@ -223,6 +293,26 @@ def main() -> int:
             export_docx=args.docx,
         )
         print(json.dumps(summary, indent=2))
+        return 0
+
+    if args.command == "generate-cover-letters-llm":
+        summary = generate_cover_letters_from_ranking_llm(
+            args.cv,
+            args.jobs_file,
+            args.ranking_file,
+            args.output_dir,
+            base_cover_letter_path=args.base_cover_letter,
+            employer_context_dir=args.employer_context_dir,
+            top_n=args.top,
+            export_docx=args.docx,
+            model=args.model,
+            base_url=args.base_url,
+        )
+        print(json.dumps(summary, indent=2))
+        return 0
+
+    if args.command == "ollama-status":
+        print(json.dumps(get_ollama_status(args.base_url), indent=2))
         return 0
 
     if args.command == "ats-check":

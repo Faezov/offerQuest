@@ -51,6 +51,42 @@ python3 -m offerquest generate-cover-letter \
   --output outputs/cover-letter-mane.txt
 ```
 
+Check whether Ollama is reachable:
+
+```bash
+python3 -m offerquest ollama-status
+```
+
+Start a repo-local Ollama server and keep its cache inside this project:
+
+```bash
+./scripts/start-ollama-local.sh
+```
+
+Pull a small model first to verify the workflow quickly:
+
+```bash
+./scripts/ollama-local.sh pull qwen3:0.6b
+```
+
+Move up to a stronger model once the local setup is working:
+
+```bash
+./scripts/ollama-local.sh pull qwen3:8b
+```
+
+Generate an employer-specific cover letter with Ollama:
+
+```bash
+python3 -m offerquest generate-cover-letter-llm \
+  --cv data/CV_BF_20260415.docx \
+  --base-cover-letter data/CL_BF_20260415.doc \
+  --jobs-file outputs/jobs/all.jsonl \
+  --job-id adzuna:5686608390 \
+  --model qwen3:8b \
+  --output outputs/cover-letter-mane-llm.txt
+```
+
 Generate cover letters for the top 5 ranked jobs:
 
 ```bash
@@ -62,6 +98,20 @@ python3 -m offerquest generate-cover-letters \
   --output-dir outputs/cover-letters-top5 \
   --top 5 \
   --docx
+```
+
+Generate employer-specific cover letters for the top 5 ranked jobs with Ollama:
+
+```bash
+python3 -m offerquest generate-cover-letters-llm \
+  --cv data/CV_BF_20260415.docx \
+  --base-cover-letter data/CL_BF_20260415.doc \
+  --jobs-file outputs/jobs/all.jsonl \
+  --ranking-file outputs/job-ranking-docx.json \
+  --output-dir outputs/cover-letters-top5-llm \
+  --top 5 \
+  --docx \
+  --model qwen3:8b
 ```
 
 Score one job description:
@@ -179,3 +229,5 @@ python3 -m offerquest rank-jobs \
 - It is designed to surface fit quickly and consistently, not replace judgment.
 - `ats-check` is an ATS-style heuristic review, not a vendor-specific simulation of Workday, Greenhouse, Lever, or Taleo.
 - `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.
+- The Ollama-backed cover letter commands require a local Ollama server and a pulled model such as `qwen3:0.6b` for a quick smoke test or `qwen3:8b` for better quality.
+- `./scripts/ollama-local.sh` keeps the Ollama home directory and model cache under `.ollama-home/` in this repo, which avoids mixing job-search models into your normal shell environment.

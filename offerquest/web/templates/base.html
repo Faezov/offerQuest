@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} | OfferQuest</title>
+    <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero__glow hero__glow--left"></div>
+        <div class="hero__glow hero__glow--right"></div>
+        <div class="hero__content">
+          <p class="eyebrow">OfferQuest Local Workbench</p>
+          <h1>{{ page_title }}</h1>
+          <p class="hero__summary">
+            Explore runs, generated artifacts, and output history from the workspace model.
+          </p>
+          <div class="hero__meta">
+            <span class="meta-pill">Workspace</span>
+            <code>{{ workspace_root }}</code>
+          </div>
+        </div>
+        <nav class="hero__nav">
+          <a href="{{ request.url_for('dashboard') }}">Overview</a>
+          <a href="{{ request.url_for('build_profile_page') }}">Build Profile</a>
+          <a href="{{ request.url_for('runs') }}">Runs</a>
+        </nav>
+      </header>
+
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

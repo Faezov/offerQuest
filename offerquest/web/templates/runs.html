@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel__header">
+      <h2>All Runs</h2>
+      <p>{{ view.run_count }} recorded run{{ '' if view.run_count == 1 else 's' }}.</p>
+    </div>
+
+    {% if view.runs %}
+      <div class="run-stack">
+        {% for run in view.runs %}
+          <a class="run-card" href="{{ request.url_for('run_detail', run_id=run.id) }}">
+            <div class="run-card__top">
+              <span class="run-badge">{{ run.workflow }}</span>
+              <time>{{ run.created_at }}</time>
+            </div>
+            <h3>{{ run.label or run.id }}</h3>
+            {% if run.metadata %}
+              <p>
+                {% for key, value in run.metadata.items() %}
+                  <span class="inline-meta">{{ key }}: {{ value }}</span>
+                {% endfor %}
+              </p>
+            {% else %}
+              <p>No extra metadata.</p>
+            {% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No runs recorded</h3>
+        <p>Once the CLI writes run manifests, this page becomes the main workspace timeline.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

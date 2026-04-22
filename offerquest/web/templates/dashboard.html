@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid panel-grid--metrics">
+    <article class="metric-card">
+      <p class="metric-card__label">Runs</p>
+      <p class="metric-card__value">{{ view.stats.run_count }}</p>
+    </article>
+    <article class="metric-card">
+      <p class="metric-card__label">Artifacts</p>
+      <p class="metric-card__value">{{ view.stats.artifact_count }}</p>
+    </article>
+    <article class="metric-card">
+      <p class="metric-card__label">Workflow Types</p>
+      <p class="metric-card__value">{{ view.stats.workflow_count }}</p>
+    </article>
+  </section>
+
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Workflow Mix</h2>
+        <p>Which jobs the workbench has been doing lately.</p>
+      </div>
+      {% if view.workflow_counts %}
+        <ul class="strip-list">
+          {% for item in view.workflow_counts %}
+            <li>
+              <span>{{ item.workflow }}</span>
+              <strong>{{ item.count }}</strong>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-state">
+          <h3>No runs yet</h3>
+          <p>Run a profile build, ATS check, ranking, or cover-letter command and it will appear here.</p>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Next Useful Step</h2>
+        <p>A good local loop for this workbench.</p>
+      </div>
+      <ol class="step-list">
+        <li>Build a candidate profile from the current CV and base cover letter.</li>
+        <li>Fetch or import jobs, then rank them.</li>
+        <li>Review generated ATS reports and letters in one place.</li>
+      </ol>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel__header">
+      <h2>Recent Runs</h2>
+      <p>The newest manifests recorded under <code>outputs/state/</code>.</p>
+    </div>
+    {% if view.recent_runs %}
+      <div class="run-stack">
+        {% for run in view.recent_runs %}
+          <a class="run-card" href="{{ request.url_for('run_detail', run_id=run.id) }}">
+            <div class="run-card__top">
+              <span class="run-badge">{{ run.workflow }}</span>
+              <time>{{ run.created_at }}</time>
+            </div>
+            <h3>{{ run.label or run.id }}</h3>
+            <p>{{ run.artifact_count }} artifact{{ '' if run.artifact_count == 1 else 's' }}</p>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>The workbench is ready</h3>
+        <p>No manifests have been recorded yet. Run the CLI with an output path and refresh this page.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,3 @@
+[console_scripts]
+offerquest = offerquest.cli:main
+offerquest-workbench = offerquest.web.app:main

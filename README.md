@@ -273,6 +273,16 @@ python3 -m offerquest rank-jobs \
   --output outputs/job-ranking.json
 ```
 
+Run a second-pass rerank over the top jobs using ATS-style signals from the current CV:
+
+```bash
+python3 -m offerquest rerank-jobs \
+  --cv data/CV_BF_20260415.docx \
+  --jobs-file outputs/jobs/all.jsonl \
+  --top 20 \
+  --output outputs/job-ranking-reranked.json
+```
+
 You can also skip the saved profile and score directly from the CV and cover letter:
 
 ```bash
@@ -298,12 +308,14 @@ python3 -m offerquest rank-jobs \
 4. Merge the job-record files into one dataset.
 5. Build or refresh your profile after updating your CV or cover letter.
 6. Run `rank-jobs` and focus your effort on the highest-scoring roles.
-7. Run `ats-check` on the top jobs to see missing keywords, section issues, and tailoring suggestions.
-8. Use the reported strengths and gaps to tailor your next cover letter version.
+7. Run `rerank-jobs` on the top set when you want a second-pass ordering that leans more on ATS-style fit.
+8. Run `ats-check` on the top jobs to see missing keywords, section issues, and tailoring suggestions.
+9. Use the reported strengths and gaps to tailor your next cover letter version.
 
 ## Notes
 
 - The scoring is heuristic, not an ATS emulator.
+- `rerank-jobs` is also heuristic; it adds a second-pass ATS-style signal, but it still does not replace judgment.
 - It is designed to surface fit quickly and consistently, not replace judgment.
 - `ats-check` is an ATS-style heuristic review, not a vendor-specific simulation of Workday, Greenhouse, Lever, or Taleo.
 - `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.

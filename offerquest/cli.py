@@ -78,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     cover_letter_llm_parser.add_argument("--employer-context", type=Path, help="Optional employer-specific notes file")
     cover_letter_llm_parser.add_argument("--model", default="qwen3:8b", help="Ollama model name, default: qwen3:8b")
     cover_letter_llm_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
+    cover_letter_llm_parser.add_argument("--timeout-seconds", type=int, default=180, help="Ollama request timeout in seconds, default: 180")
     cover_letter_llm_job_group = cover_letter_llm_parser.add_mutually_exclusive_group(required=True)
     cover_letter_llm_job_group.add_argument("--job", type=Path, help="Raw job description file")
     cover_letter_llm_job_group.add_argument("--jobs-file", type=Path, help="JSON or JSONL file of normalized job records")
@@ -110,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     cover_letters_llm_parser.add_argument("--docx", action="store_true", help="Also export each generated letter as .docx")
     cover_letters_llm_parser.add_argument("--model", default="qwen3:8b", help="Ollama model name, default: qwen3:8b")
     cover_letters_llm_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
+    cover_letters_llm_parser.add_argument("--timeout-seconds", type=int, default=180, help="Ollama request timeout in seconds, default: 180")
 
     ollama_status_parser = subparsers.add_parser(
         "ollama-status",
@@ -267,6 +269,7 @@ def main() -> int:
             employer_context_path=args.employer_context,
             model=args.model,
             base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
         )
         write_cover_letter(args.output, payload)
         print(
@@ -307,6 +310,7 @@ def main() -> int:
             export_docx=args.docx,
             model=args.model,
             base_url=args.base_url,
+            timeout_seconds=args.timeout_seconds,
         )
         print(json.dumps(summary, indent=2))
         return 0

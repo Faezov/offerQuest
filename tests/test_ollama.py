@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -32,7 +33,10 @@ class OllamaTests(unittest.TestCase):
         }
         schema = {"type": "object"}
 
-        with patch("offerquest.ollama._post_json", return_value=payload):
+        with patch(
+            "offerquest.ollama._post_json_stream",
+            return_value=[{"message": {"content": payload["message"]["content"]}, "done": True}],
+        ):
             response = generate_structured_response(
                 model="qwen3:8b",
                 messages=[{"role": "user", "content": "Hi"}],
@@ -40,6 +44,33 @@ class OllamaTests(unittest.TestCase):
             )
 
         self.assertEqual(response["resume_headline"], "Senior Data Analyst")
+
+    def test_generate_structured_response_disables_thinking_and_uses_longer_timeout(self) -> None:
+        payload = {
+            "message": {
+                "content": '{"resume_headline":"Senior Data Analyst","cover_letter_text":"Hello","employer_specific_focus":[],"evidence_used":[],"caution_flags":[]}'
+            }
+        }
+        captured: dict[str, object] = {}
+
+        def fake_post_json_stream(url, payload, **kwargs):
+            captured["url"] = url
+            captured["payload"] = payload
+            captured["kwargs"] = kwargs
+            return [{"message": {"content": payload_response["message"]["content"]}, "done": True}]
+
+        payload_response = payload
+
+        with patch("offerquest.ollama._post_json_stream", side_effect=fake_post_json_stream):
+            generate_structured_response(
+                model="qwen3:8b",
+                messages=[{"role": "user", "content": "Hi"}],
+                schema={"type": "object"},
+            )
+
+        self.assertFalse(captured["payload"]["think"])
+        self.assertTrue(captured["payload"]["stream"])
+        self.assertEqual(captured["kwargs"]["timeout_seconds"], 180)
 
 
 if __name__ == "__main__":

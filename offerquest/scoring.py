@@ -4,10 +4,11 @@ from pathlib import Path
 
 from .extractors import read_document_text
 from .jobs import job_record_to_text
+from .matching import contains_any_keyword, contains_keyword, find_pattern_matches, prepare_matchable_text
 from .profile import DOMAIN_PATTERNS, SKILL_PATTERNS
 
 ROLE_FAMILIES = {
-    "analytics": ["analyst", "analytics", "insights", "reporting", "business intelligence", "bi"],
+    "analytics": ["analyst", "analytics", "insights", "reporting", "business intelligence", "bi analyst"],
     "metadata": ["metadata", "data governance", "data dictionary", "data standards"],
     "quality": ["data quality", "validation", "integrity"],
     "engineering": ["data engineer", "pipeline", "warehousing", "infrastructure"],
@@ -23,6 +24,9 @@ AUSTRALIA_LOCATION_TERMS = [
     "brisbane",
     "canberra",
     "perth",
+]
+
+REMOTE_LOCATION_TERMS = [
     "remote",
     "hybrid",
 ]
@@ -68,29 +72,30 @@ def score_job_record(job_record: dict, profile: dict) -> dict:
 
 
 def score_job_text(job_text: str, profile: dict, *, source_name: str | None = None) -> dict:
-    lowered = job_text.lower()
+    prepared = prepare_matchable_text(job_text)
     job_title = infer_job_title(job_text)
-    job_skills = detect_matches(lowered, SKILL_PATTERNS)
-    job_domains = detect_matches(lowered, DOMAIN_PATTERNS)
+    title_prepared = prepare_matchable_text(job_title)
+    job_skills = detect_matches(prepared, SKILL_PATTERNS)
+    job_domains = detect_matches(prepared, DOMAIN_PATTERNS)
 
     candidate_skills = set(profile.get("core_skills", []))
     candidate_domains = set(profile.get("domains", []))
-    target_titles = [title.lower() for title in profile.get("search_focus", {}).get("priority_titles", [])]
+    target_titles = profile.get("search_focus", {}).get("priority_titles", [])
 
     matched_skills = sorted(candidate_skills.intersection(job_skills))
     missing_skills = sorted(set(job_skills) - candidate_skills)
     matched_domains = sorted(candidate_domains.intersection(job_domains))
 
     title_score, title_notes = score_title_alignment(job_title, target_titles)
-    skill_score = score_ratio(len(matched_skills), len(job_skills), maximum=45, neutral=20)
-    domain_score = score_ratio(len(matched_domains), len(job_domains), maximum=20, neutral=10)
-    seniority_score = score_seniority(lowered, profile.get("years_experience"))
-    location_score = score_location(lowered)
+    skill_score = score_ratio(len(matched_skills), len(job_skills), maximum=45, neutral=10)
+    domain_score = score_ratio(len(matched_domains), len(job_domains), maximum=20, neutral=5)
+    seniority_score = score_seniority(prepared, profile.get("years_experience"))
+    location_score = score_location(prepared)
     penalty_score = 0
 
-    if any(term in lowered for term in ROLE_FAMILIES["science"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["science"]):
         penalty_score += 20
-    if any(term in lowered for term in ROLE_FAMILIES["engineering"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["engineering"]):
         penalty_score += 12
 
     total_score = max(
@@ -113,9 +118,9 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
     if missing_skills:
         gaps.append(f"Missing or unclear skills: {', '.join(missing_skills[:6])}")
 
-    if "machine learning" in lowered and "Data science" not in candidate_skills:
+    if contains_keyword(prepared, "machine learning") and "Data science" not in candidate_skills:
         gaps.append("The role leans toward machine learning more than the current CV does.")
-    if any(term in lowered for term in ROLE_FAMILIES["engineering"]) and "Automation" not in candidate_skills:
+    if contains_any_keyword(prepared, ROLE_FAMILIES["engineering"]) and "Automation" not in candidate_skills:
         gaps.append("The role may lean more toward data engineering infrastructure than analytics/reporting.")
 
     return {
@@ -140,12 +145,8 @@ def rank_job_records(job_records: list[dict], profile: dict) -> list[dict]:
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
 
 
-def detect_matches(text: str, patterns: dict[str, list[str]]) -> set[str]:
-    return {
-        label
-        for label, keywords in patterns.items()
-        if any(keyword in text for keyword in keywords)
-    }
+def detect_matches(text: str | object, patterns: dict[str, list[str]]) -> set[str]:
+    return set(find_pattern_matches(text, patterns))
 
 
 def infer_job_title(job_text: str) -> str:
@@ -156,26 +157,26 @@ def infer_job_title(job_text: str) -> str:
 
 
 def score_title_alignment(job_title: str, target_titles: list[str]) -> tuple[int, list[str]]:
-    lowered_title = job_title.lower()
+    prepared = prepare_matchable_text(strip_parenthetical_text(job_title))
     notes: list[str] = []
 
-    if any(target in lowered_title for target in target_titles):
+    if any(contains_keyword(prepared, strip_parenthetical_text(target)) for target in target_titles):
         notes.append("The role title directly matches the target search focus.")
         return 15, notes
 
-    if any(keyword in lowered_title for keyword in ROLE_FAMILIES["metadata"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["metadata"]):
         notes.append("The title is aligned with metadata or governance work.")
         return 14, notes
-    if any(keyword in lowered_title for keyword in ROLE_FAMILIES["analytics"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["analytics"]):
         notes.append("The title sits in the analytics/reporting family.")
         return 13, notes
-    if any(keyword in lowered_title for keyword in ROLE_FAMILIES["quality"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["quality"]):
         notes.append("The title maps well to data quality strengths.")
         return 12, notes
-    if any(keyword in lowered_title for keyword in ROLE_FAMILIES["science"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["science"]):
         notes.append("The title shifts toward data science, which looks more like a stretch.")
         return 6, notes
-    if any(keyword in lowered_title for keyword in ROLE_FAMILIES["engineering"]):
+    if contains_any_keyword(prepared, ROLE_FAMILIES["engineering"]):
         notes.append("The title leans toward data engineering rather than analysis.")
         return 5, notes
 
@@ -188,17 +189,23 @@ def score_ratio(matches: int, total: int, *, maximum: int, neutral: int) -> int:
     return round((matches / total) * maximum)
 
 
-def score_seniority(job_text: str, years_experience: int | None) -> int:
-    if any(term in job_text for term in ("senior", "lead", "principal")):
+def score_seniority(job_text: str | object, years_experience: int | None) -> int:
+    if contains_any_keyword(job_text, ["senior", "lead", "principal"]):
         return 10 if (years_experience or 0) >= 8 else 6
-    if "manager" in job_text:
+    if contains_keyword(job_text, "manager"):
         return 7 if (years_experience or 0) >= 8 else 5
     return 8
 
 
-def score_location(job_text: str) -> int:
-    if any(term in job_text for term in AUSTRALIA_LOCATION_TERMS):
-        return 10
-    if any(term in job_text for term in NON_AUSTRALIA_LOCATION_TERMS):
+def score_location(job_text: str | object) -> int:
+    if contains_any_keyword(job_text, NON_AUSTRALIA_LOCATION_TERMS):
         return 2
+    if contains_any_keyword(job_text, AUSTRALIA_LOCATION_TERMS):
+        return 10
+    if contains_any_keyword(job_text, REMOTE_LOCATION_TERMS):
+        return 6
     return 5
+
+
+def strip_parenthetical_text(value: str) -> str:
+    return " ".join(part.strip() for part in value.split("(") if part.strip())

@@ -2,6 +2,22 @@
 
 OfferQuest turns your CV and cover letter into a reusable job-fit profile so you can rank data roles by how well they match your background.
 
+## Setup
+
+Create a local virtual environment, install the package in editable mode, and add the optional dev tools:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+Run the test suite:
+
+```bash
+python3 -m unittest discover -s tests -q
+```
+
 ## What It Does
 
 - Extracts text from your current CV and cover letter files in `data/`
@@ -22,6 +38,8 @@ Based on the CV and cover letter currently in this repo, the strongest target zo
 - Health, research, university, and public-sector data teams
 
 ## Usage
+
+OfferQuest now also writes lightweight run manifests under `outputs/state/` so a future UI can reason about profiles, rankings, ATS reports, and generated letters as named runs instead of scraping loose files.
 
 Build a profile from the current documents:
 

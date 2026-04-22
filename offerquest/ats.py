@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .extractors import read_document_text
 from .jobs import job_record_to_text
+from .matching import contains_any_keyword, contains_keyword
 from .profile import (
     DOMAIN_PATTERNS,
     SKILL_PATTERNS,
@@ -14,7 +15,7 @@ from .scoring import infer_job_title, score_job_text, score_title_alignment
 
 ATS_EXTRA_PATTERNS = {
     "Agile": ["agile", "scrum", "kanban"],
-    "Business intelligence": ["business intelligence", "bi analyst", "bi reporting"],
+    "Business intelligence": ["business intelligence", "bi analyst"],
     "Cloud": ["cloud"],
     "Dashboards": ["dashboard", "dashboards"],
     "Data governance": ["data governance", "governance"],
@@ -180,25 +181,20 @@ def build_ats_report(
 
 
 def analyze_keyword_coverage(cv_text: str, job_text: str, *, job_title: str) -> dict:
-    cv_lowered = cv_text.lower()
-    job_lowered = job_text.lower()
     lines = [line.strip().lower() for line in job_text.splitlines() if line.strip()]
-    job_title_lowered = job_title.lower()
 
     entries: list[dict] = []
     for label, patterns in ATS_PATTERNS.items():
-        if not any(pattern in job_lowered for pattern in patterns):
+        if not contains_any_keyword(job_text, patterns):
             continue
 
-        in_title = label.lower() in job_title_lowered or any(
-            pattern in job_title_lowered for pattern in patterns
-        )
+        in_title = contains_keyword(job_title, label) or contains_any_keyword(job_title, patterns)
         required = any(
-            any(pattern in line for pattern in patterns)
+            contains_any_keyword(line, patterns)
             and any(marker in line for marker in REQUIRED_MARKERS)
             for line in lines
         ) or in_title
-        matched = any(pattern in cv_lowered for pattern in patterns)
+        matched = contains_any_keyword(cv_text, patterns)
 
         entries.append(
             {

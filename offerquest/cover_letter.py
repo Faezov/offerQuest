@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 from .ats import build_ats_report
 from .docx import export_document_as_docx
 from .extractors import read_document_text
 from .jobs import find_job_record, job_record_to_text, read_job_records
+from .ollama import DEFAULT_OLLAMA_BASE_URL, generate_structured_response
 from .profile import build_candidate_profile
 from .scoring import infer_job_title
 
@@ -90,6 +92,63 @@ def generate_cover_letter_for_job_record(
     }
 
 
+def generate_cover_letter_for_job_record_llm(
+    cv_path: str | Path,
+    job_record: dict,
+    *,
+    base_cover_letter_path: str | Path | None = None,
+    employer_context_path: str | Path | None = None,
+    model: str = "qwen3:8b",
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+) -> dict:
+    cv_text = read_document_text(cv_path)
+    base_cover_letter_text = read_optional_text(base_cover_letter_path)
+    employer_context_text = read_optional_text(employer_context_path)
+    profile = build_candidate_profile(cv_text, base_cover_letter_text)
+    job_text = job_record_to_text(job_record)
+
+    ats_report = build_ats_report(
+        cv_text,
+        job_text,
+        cv_path=str(cv_path),
+        cover_letter_text=base_cover_letter_text,
+    )
+
+    job_context = {
+        "job_title": job_record.get("title") or infer_job_title(job_text),
+        "company": job_record.get("company"),
+        "location": job_record.get("location"),
+    }
+    llm_payload = build_cover_letter_with_ollama(
+        profile=profile,
+        ats_report=ats_report,
+        job_context=job_context,
+        job_text=job_text,
+        base_cover_letter_text=base_cover_letter_text,
+        employer_context_text=employer_context_text,
+        model=model,
+        base_url=base_url,
+    )
+
+    return {
+        "job_id": job_record.get("id"),
+        "job_title": job_context["job_title"],
+        "company": job_context["company"],
+        "location": job_context["location"],
+        "job_url": job_record.get("url"),
+        "cover_letter_text": llm_payload["cover_letter_text"],
+        "resume_headline": llm_payload["resume_headline"],
+        "employer_specific_focus": llm_payload["employer_specific_focus"],
+        "evidence_used": llm_payload["evidence_used"],
+        "caution_flags": llm_payload["caution_flags"],
+        "ats_score": ats_report["ats_score"],
+        "matched_keywords": ats_report["keyword_coverage"]["matched_keywords"],
+        "missing_keywords": ats_report["keyword_coverage"]["missing_keywords"],
+        "llm_provider": "ollama",
+        "llm_model": model,
+    }
+
+
 def generate_cover_letters_from_ranking(
     cv_path: str | Path,
     jobs_file: str | Path,
@@ -155,6 +214,95 @@ def generate_cover_letters_from_ranking(
     return summary
 
 
+def generate_cover_letters_from_ranking_llm(
+    cv_path: str | Path,
+    jobs_file: str | Path,
+    ranking_file: str | Path,
+    output_dir: str | Path,
+    *,
+    base_cover_letter_path: str | Path | None = None,
+    employer_context_dir: str | Path | None = None,
+    top_n: int = 5,
+    export_docx: bool = False,
+    model: str = "qwen3:8b",
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+) -> dict:
+    job_records = read_job_records(jobs_file)
+    ranking_payload = json.loads(Path(ranking_file).read_text(encoding="utf-8"))
+    rankings = ranking_payload.get("rankings", [])
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    employer_context_root = Path(employer_context_dir) if employer_context_dir else None
+
+    selected_rankings = select_top_unique_rankings(rankings, limit=top_n)
+    generated: list[dict] = []
+
+    for index, ranking in enumerate(selected_rankings, start=1):
+        job_id = ranking.get("job_id")
+        if not job_id:
+            continue
+        job_record = find_job_record(job_records, job_id)
+        if job_record is None:
+            continue
+
+        employer_context_path = resolve_employer_context_path(
+            employer_context_root,
+            job_record=job_record,
+        )
+        payload = generate_cover_letter_for_job_record_llm(
+            cv_path,
+            job_record,
+            base_cover_letter_path=base_cover_letter_path,
+            employer_context_path=employer_context_path,
+            model=model,
+            base_url=base_url,
+        )
+
+        filename_stem = build_cover_letter_filename(index, payload)
+        text_path = output_path / f"{filename_stem}.txt"
+        json_path = output_path / f"{filename_stem}.json"
+        write_cover_letter(text_path, payload)
+        write_cover_letter(json_path, payload)
+
+        item = {
+            "rank": index,
+            "job_id": payload.get("job_id"),
+            "company": payload.get("company"),
+            "job_title": payload.get("job_title"),
+            "location": payload.get("location"),
+            "job_url": payload.get("job_url"),
+            "ats_score": payload.get("ats_score"),
+            "text_path": str(text_path),
+            "json_path": str(json_path),
+            "resume_headline": payload.get("resume_headline"),
+            "employer_specific_focus": payload.get("employer_specific_focus", []),
+            "missing_keywords": payload.get("missing_keywords", []),
+            "llm_model": payload.get("llm_model"),
+        }
+
+        if employer_context_path:
+            item["employer_context_path"] = str(employer_context_path)
+
+        if export_docx:
+            docx_path = output_path / f"{filename_stem}.docx"
+            export_document_as_docx(text_path, docx_path)
+            item["docx_path"] = str(docx_path)
+
+        generated.append(item)
+
+    summary = {
+        "job_count": len(generated),
+        "output_dir": str(output_path),
+        "llm_provider": "ollama",
+        "llm_model": model,
+        "items": generated,
+    }
+    (output_path / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
+
+
 def build_cover_letter_text(*, profile: dict, ats_report: dict, job_context: dict) -> str:
     job_title = job_context.get("job_title") or "the advertised role"
     company = job_context.get("company") or "your team"
@@ -208,6 +356,130 @@ def build_cover_letter_text(*, profile: dict, ats_report: dict, job_context: dic
     )
 
     return opening + "\n\n" + experience + "\n\n" + alignment + gap_paragraph + closing
+
+
+def build_cover_letter_with_ollama(
+    *,
+    profile: dict,
+    ats_report: dict,
+    job_context: dict,
+    job_text: str,
+    base_cover_letter_text: str,
+    employer_context_text: str,
+    model: str,
+    base_url: str,
+) -> dict:
+    schema = cover_letter_schema()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You write employer-specific cover letters for job applications. "
+                "Only use facts present in the candidate evidence provided below. "
+                "Do not invent tools, industries, achievements, metrics, employers, or domain knowledge. "
+                "If an employer-specific detail is not provided, stay specific to the role and company name without fabricating mission statements or culture claims. "
+                "Return valid JSON matching the schema."
+            ),
+        },
+        {
+            "role": "user",
+            "content": build_cover_letter_prompt(
+                profile=profile,
+                ats_report=ats_report,
+                job_context=job_context,
+                job_text=job_text,
+                base_cover_letter_text=base_cover_letter_text,
+                employer_context_text=employer_context_text,
+                schema=schema,
+            ),
+        },
+    ]
+
+    response = generate_structured_response(
+        model=model,
+        messages=messages,
+        schema=schema,
+        base_url=base_url,
+        temperature=0.2,
+    )
+    return normalize_llm_cover_letter_response(response, profile=profile)
+
+
+def cover_letter_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "resume_headline": {"type": "string"},
+            "employer_specific_focus": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "evidence_used": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "caution_flags": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "cover_letter_text": {"type": "string"},
+        },
+        "required": [
+            "resume_headline",
+            "employer_specific_focus",
+            "evidence_used",
+            "caution_flags",
+            "cover_letter_text",
+        ],
+    }
+
+
+def build_cover_letter_prompt(
+    *,
+    profile: dict,
+    ats_report: dict,
+    job_context: dict,
+    job_text: str,
+    base_cover_letter_text: str,
+    employer_context_text: str,
+    schema: dict[str, Any],
+) -> str:
+    return (
+        "Write a strong employer-specific cover letter draft for this job.\n\n"
+        "Requirements:\n"
+        "- 4 to 5 short paragraphs\n"
+        "- natural, credible tone\n"
+        "- clearly tailored to the employer and role\n"
+        "- grounded only in the candidate evidence below\n"
+        "- do not claim missing skills as if they are proven facts\n"
+        "- if there is a gap, frame it honestly and constructively\n"
+        "- end with 'With best regards,' and the candidate name\n"
+        "- return JSON only\n\n"
+        f"JSON schema:\n{json.dumps(schema, indent=2)}\n\n"
+        f"Job context:\n{json.dumps(job_context, indent=2)}\n\n"
+        f"Candidate profile:\n{json.dumps(profile, indent=2)}\n\n"
+        f"ATS report:\n{json.dumps(ats_report, indent=2)}\n\n"
+        "Base cover letter reference:\n"
+        f"{base_cover_letter_text or '[none]'}\n\n"
+        "Employer-specific context:\n"
+        f"{employer_context_text or '[none provided]'}\n\n"
+        "Job description text:\n"
+        f"{job_text}\n"
+    )
+
+
+def normalize_llm_cover_letter_response(response: dict, *, profile: dict) -> dict:
+    text = str(response.get("cover_letter_text", "")).strip()
+    if profile.get("name") and profile["name"] not in text:
+        text = text.rstrip() + f"\n\nWith best regards,\n{profile['name']}"
+
+    return {
+        "resume_headline": str(response.get("resume_headline", "")).strip(),
+        "employer_specific_focus": ensure_string_list(response.get("employer_specific_focus")),
+        "evidence_used": ensure_string_list(response.get("evidence_used")),
+        "caution_flags": ensure_string_list(response.get("caution_flags")),
+        "cover_letter_text": text,
+    }
 
 
 def infer_job_context(job_text: str) -> dict:
@@ -346,3 +618,28 @@ def slugify(value: str) -> str:
     lowered = value.lower()
     lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
     return lowered.strip("-") or "item"
+
+
+def ensure_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def resolve_employer_context_path(
+    employer_context_root: Path | None,
+    *,
+    job_record: dict,
+) -> Path | None:
+    if employer_context_root is None:
+        return None
+
+    company = slugify(job_record.get("company") or "")
+    candidates = [
+        employer_context_root / f"{company}.txt",
+        employer_context_root / f"{company}.md",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Build Candidate Profile</h2>
+        <p>Choose a CV and a base cover letter from the workspace, then save the extracted profile as JSON.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if view.has_documents %}
+        <form method="post" class="form-stack">
+          <label class="field">
+            <span>CV file</span>
+            <select name="cv_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Cover letter file</span>
+            <select name="cover_letter_path" required>
+              {% for document in view.documents %}
+                <option value="{{ document }}" {% if document == view.selected_cover_letter %}selected{% endif %}>{{ document }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Output JSON path</span>
+            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+          </label>
+
+          <button class="primary-button" type="submit">Build Profile</button>
+        </form>
+      {% else %}
+        <div class="empty-state">
+          <h3>No supported documents found</h3>
+          <p>Add CV and cover-letter files under <code>data/</code> first, then reload this page.</p>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>What This Does</h2>
+        <p>The output is reusable by ranking, ATS, and letter-generation workflows.</p>
+      </div>
+      <ol class="step-list">
+        <li>Reads the chosen CV and cover letter from the workspace.</li>
+        <li>Extracts core identity, skills, domains, recent roles, and search focus.</li>
+        <li>Saves JSON output and records a semantic run under <code>outputs/state/</code>.</li>
+      </ol>
+    </article>
+  </section>
+
+  {% if view.result %}
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Profile Built</h2>
+          <p>
+            Saved to <code>{{ view.result.output_path_relative }}</code>.
+            <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+          </p>
+        </div>
+        <dl class="detail-grid">
+          <div>
+            <dt>Name</dt>
+            <dd>{{ view.result.profile.name or "Not detected" }}</dd>
+          </div>
+          <div>
+            <dt>Location</dt>
+            <dd>{{ view.result.profile.location or "Not detected" }}</dd>
+          </div>
+          <div>
+            <dt>Email</dt>
+            <dd>{{ view.result.profile.email or "Not detected" }}</dd>
+          </div>
+          <div>
+            <dt>Years Experience</dt>
+            <dd>{{ view.result.profile.years_experience or "Not detected" }}</dd>
+          </div>
+        </dl>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Extracted Focus</h2>
+          <p>The main reusable target zone inferred from the current documents.</p>
+        </div>
+        <ul class="token-list">
+          {% for title in view.result.profile.search_focus.priority_titles %}
+            <li>{{ title }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Core Skills</h2>
+        </div>
+        <ul class="token-list">
+          {% for skill in view.result.profile.core_skills %}
+            <li>{{ skill }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Domains</h2>
+        </div>
+        <ul class="token-list">
+          {% for domain in view.result.profile.domains %}
+            <li>{{ domain }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+
+    {% if view.result.profile.quality_warnings %}
+      <section class="panel">
+        <div class="panel__header">
+          <h2>Quality Warnings</h2>
+          <p>Useful prompts before relying on this profile for ATS or cover-letter generation.</p>
+        </div>
+        <ul class="warning-list">
+          {% for warning in view.result.profile.quality_warnings %}
+            <li>{{ warning }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock %}

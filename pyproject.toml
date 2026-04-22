@@ -12,9 +12,19 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+web = [
+  "fastapi>=0.115",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.9",
+  "uvicorn>=0.30",
+]
 
 [project.scripts]
 offerquest = "offerquest.cli:main"
+offerquest-workbench = "offerquest.web.app:main"
 
 [tool.setuptools.packages.find]
 include = ["offerquest*"]
+
+[tool.setuptools.package-data]
+"offerquest.web" = ["templates/*.html", "static/*.css"]

@@ -1,3 +1,17 @@
+Metadata-Version: 2.4
+Name: offerquest
+Version: 0.1.0
+Summary: Job-fit analysis, ATS checks, and cover-letter generation tooling.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: web
+Requires-Dist: fastapi>=0.115; extra == "web"
+Requires-Dist: jinja2>=3.1; extra == "web"
+Requires-Dist: python-multipart>=0.0.9; extra == "web"
+Requires-Dist: uvicorn>=0.30; extra == "web"
+
 # OfferQuest
 
 OfferQuest turns your CV and cover letter into a reusable job-fit profile so you can rank data roles by how well they match your background.

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Run Summary</h2>
+        <p>{{ view.manifest.workflow }} recorded at {{ view.manifest.created_at }}.</p>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Run ID</dt>
+          <dd><code>{{ view.manifest.id }}</code></dd>
+        </div>
+        <div>
+          <dt>Workflow</dt>
+          <dd>{{ view.manifest.workflow }}</dd>
+        </div>
+        <div>
+          <dt>Label</dt>
+          <dd>{{ view.manifest.label or "None" }}</dd>
+        </div>
+        <div>
+          <dt>Artifacts</dt>
+          <dd>{{ view.artifact_count }}</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Metadata</h2>
+        <p>Helpful context recorded with the run.</p>
+      </div>
+      {% if view.manifest.metadata %}
+        <ul class="strip-list">
+          {% for key, value in view.manifest.metadata.items() %}
+            <li>
+              <span>{{ key }}</span>
+              <strong>{{ value }}</strong>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-state compact">
+          <p>No metadata was attached to this run.</p>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel__header">
+      <h2>Artifacts</h2>
+      <p>Open previews for text-like outputs or use the recorded paths directly.</p>
+    </div>
+    {% if view.artifacts %}
+      <div class="artifact-table">
+        <div class="artifact-table__head">
+          <span>Kind</span>
+          <span>File</span>
+          <span>Status</span>
+          <span></span>
+        </div>
+        {% for artifact in view.artifacts %}
+          <div class="artifact-table__row">
+            <span>{{ artifact.kind or "artifact" }}</span>
+            <span><code>{{ artifact.path }}</code></span>
+            <span>{{ "ready" if artifact.exists else "missing" }}</span>
+            <span>
+              <a href="{{ request.url_for('artifact_preview', run_id=view.manifest.id, artifact_index=artifact.index) }}">Preview</a>
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state compact">
+        <p>This run does not list any artifacts yet.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

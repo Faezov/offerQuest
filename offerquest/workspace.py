@@ -73,6 +73,21 @@ class ProjectState:
             return []
         return runs
 
+    def get_run_manifest(self, run_id: str) -> dict[str, Any] | None:
+        manifest_path = self.runs_dir / f"{run_id}.json"
+        if not manifest_path.exists():
+            return None
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    def resolve_artifact_path(self, path: str | Path) -> Path:
+        artifact_path = Path(path)
+        if artifact_path.is_absolute():
+            return artifact_path
+        return (self.root / artifact_path).resolve()
+
     def _normalize_artifact(self, artifact: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(artifact)
         raw_path = normalized.get("path")

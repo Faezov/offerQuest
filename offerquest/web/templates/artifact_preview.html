@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel">
+    <div class="panel__header">
+      <h2>Artifact Preview</h2>
+      <p>
+        <a href="{{ request.url_for('run_detail', run_id=run_id) }}">Back to run</a>
+      </p>
+    </div>
+    <dl class="detail-grid">
+      <div>
+        <dt>Kind</dt>
+        <dd>{{ preview.artifact.kind or "artifact" }}</dd>
+      </div>
+      <div>
+        <dt>Recorded Path</dt>
+        <dd><code>{{ preview.artifact.path }}</code></dd>
+      </div>
+      <div>
+        <dt>Absolute Path</dt>
+        <dd><code>{{ preview.path }}</code></dd>
+      </div>
+      <div>
+        <dt>Status</dt>
+        <dd>{{ "ready" if preview.exists else "missing" }}</dd>
+      </div>
+    </dl>
+
+    {% if preview.note %}
+      <div class="callout">
+        <p>{{ preview.note }}</p>
+      </div>
+    {% endif %}
+
+    {% if preview.content %}
+      <pre class="code-preview"><code>{{ preview.content }}</code></pre>
+    {% endif %}
+  </section>
+{% endblock %}

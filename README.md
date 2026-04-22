@@ -8,6 +8,7 @@ OfferQuest turns your CV and cover letter into a reusable job-fit profile so you
 - Builds a structured candidate profile with strengths, likely target roles, and search keywords
 - Fetches and normalizes jobs from public/official-friendly sources
 - Scores individual job descriptions against that profile
+- Runs ATS-style keyword, section, and parseability checks for one target role
 - Ranks a folder of job descriptions so you can focus on the strongest opportunities first
 
 ## Current Search Focus
@@ -37,6 +38,25 @@ Score one job description:
 python3 -m offerquest score-job \
   --profile outputs/bulat-profile.json \
   --job jobs/example-role.txt
+```
+
+Run ATS-style checks for one target job:
+
+```bash
+python3 -m offerquest ats-check \
+  --cv data/CV_BF_20260415.doc \
+  --job jobs/example-role.txt \
+  --output outputs/ats-check.json
+```
+
+Run ATS-style checks for one fetched job record:
+
+```bash
+python3 -m offerquest ats-check \
+  --cv data/CV_BF_20260415.doc \
+  --jobs-file outputs/jobs/all.jsonl \
+  --job-id adzuna:5686608390 \
+  --output outputs/ats-check.json
 ```
 
 Rank every job description in a folder:
@@ -117,10 +137,12 @@ python3 -m offerquest rank-jobs \
 4. Merge the job-record files into one dataset.
 5. Build or refresh your profile after updating your CV or cover letter.
 6. Run `rank-jobs` and focus your effort on the highest-scoring roles.
-7. Use the reported strengths and gaps to tailor your next cover letter version.
+7. Run `ats-check` on the top jobs to see missing keywords, section issues, and tailoring suggestions.
+8. Use the reported strengths and gaps to tailor your next cover letter version.
 
 ## Notes
 
 - The scoring is heuristic, not an ATS emulator.
 - It is designed to surface fit quickly and consistently, not replace judgment.
+- `ats-check` is an ATS-style heuristic review, not a vendor-specific simulation of Workday, Greenhouse, Lever, or Taleo.
 - `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.

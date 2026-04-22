@@ -383,6 +383,13 @@ def collect_job_record_inputs(paths: list[str | Path]) -> list[dict]:
     return merge_job_record_sets(*record_sets)
 
 
+def find_job_record(records: list[dict], job_id: str) -> dict | None:
+    for record in records:
+        if record.get("id") == job_id:
+            return record
+    return None
+
+
 def job_record_to_text(record: dict) -> str:
     metadata = record.get("metadata") or {}
     metadata_lines: list[str] = []

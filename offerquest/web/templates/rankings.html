@@ -5,6 +5,11 @@
     <div class="panel__header">
       <h2>Latest Ranking Output</h2>
       <p>The newest ranking JSON found under <code>outputs/</code>.</p>
+      {% if view.has_ranking %}
+        <p>
+          <a class="primary-button" href="{{ request.url_for('build_rerank_jobs_page') }}?ranking_file={{ view.ranking_file }}">Rerank Top Jobs</a>
+        </p>
+      {% endif %}
     </div>
 
     {% if view.has_ranking %}
@@ -69,11 +74,11 @@
             <span class="score-pill">{{ item.score }}</span>
             <div class="ranking-table__links">
               {% if item.job_id %}
-                <a href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}">Tailor CV</a>
-                <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}">CV Draft</a>
-                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based">Generate Draft</a>
-                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm">Generate LLM Draft</a>
-                <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}">Compare Drafts</a>
+                <a href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Tailor CV</a>
+                <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">CV Draft</a>
+                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based&ranking_file={{ view.ranking_file }}">Generate Draft</a>
+                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm&ranking_file={{ view.ranking_file }}">Generate LLM Draft</a>
+                <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Compare Drafts</a>
               {% endif %}
               {% if item.job_url %}
                 <a href="{{ item.job_url }}" target="_blank" rel="noreferrer">Listing</a>

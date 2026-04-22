@@ -14,6 +14,7 @@ from offerquest.workbench import (
     build_dashboard_view,
     build_latest_rankings_view,
     build_profile_form_view,
+    build_rerank_jobs_form_view,
     build_resume_tailored_draft_form_view,
     build_resume_tailoring_form_view,
     build_run_detail_view,
@@ -22,6 +23,7 @@ from offerquest.workbench import (
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
+    run_rerank_jobs_build,
     run_resume_tailored_draft_build,
     run_resume_tailoring_plan_build,
 )
@@ -308,6 +310,34 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual(view["selected_jobs_file"], "outputs/jobs/all.jsonl")
         self.assertTrue(view["selected_export_docx"])
         self.assertEqual(view["selected_docx_output"], "outputs/workbench/example-org-senior-data-analyst-tailored-resume.docx")
+
+    def test_build_rerank_jobs_form_view_prefills_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            outputs_dir = root / "outputs"
+            jobs_dir = outputs_dir / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (data_dir / "CV_sample.txt").write_text("cv", encoding="utf-8")
+            (data_dir / "CL_sample.txt").write_text("cl", encoding="utf-8")
+            (jobs_dir / "all.jsonl").write_text(
+                '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "SQL reporting role"}\n',
+                encoding="utf-8",
+            )
+            (outputs_dir / "job-ranking.json").write_text(
+                '{"job_count": 1, "rankings": [{"job_id": "job-1", "job_title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "score": 95}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            view = build_rerank_jobs_form_view(state, ranking_file="outputs/job-ranking.json")
+
+        self.assertEqual(view["selected_ranking_file"], "outputs/job-ranking.json")
+        self.assertEqual(view["selected_jobs_file"], "outputs/jobs/all.jsonl")
+        self.assertEqual(view["selected_top_n"], "1")
+        self.assertEqual(view["selected_output"], "outputs/job-ranking-reranked.json")
+        self.assertEqual(len(view["selected_ranking_preview"]), 1)
 
     def test_run_cover_letter_build_writes_output_and_records_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -603,6 +633,55 @@ class WorkbenchTests(unittest.TestCase):
             self.assertIn("Automation", result.comparison["section_changes"]["skills_after"])
             self.assertIn("Senior Data Analyst", result.output_path.read_text(encoding="utf-8"))
             self.assertIn("Senior Data Analyst", read_document_text(result.docx_output_path))
+
+    def test_run_rerank_jobs_build_writes_output_and_records_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "data"
+            outputs_dir = root / "outputs"
+            jobs_dir = outputs_dir / "jobs"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+
+            (data_dir / "CV_sample.txt").write_text(
+                "Jane Doe\nSydney, NSW, Australia\njane@example.com\nProfessional Summary\nSenior data analyst with SQL, Python, reporting, metadata, and healthcare research experience.\nCore Skills\nSQL\nPython\nReporting\nMetadata\nProfessional Experience\nExample Health\nSenior Reporting Analyst | 2025\nBuilt reporting workflows.\n",
+                encoding="utf-8",
+            )
+            (data_dir / "CL_sample.txt").write_text(
+                "Dear Hiring Team,\nI am writing to apply for the position of Senior Data Analyst.\nJane Doe\n",
+                encoding="utf-8",
+            )
+            (jobs_dir / "all.jsonl").write_text(
+                "\n".join(
+                    [
+                        '{"id": "job-1", "title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "description_text": "SQL reporting role in analytics.", "source": "manual"}',
+                        '{"id": "job-2", "title": "Data Officer", "company": "Example Org", "location": "Sydney", "description_text": "Required skills: SQL, reporting.", "source": "manual"}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (outputs_dir / "job-ranking.json").write_text(
+                '{"job_count": 2, "rankings": [{"job_id": "job-1", "job_title": "Senior Data Analyst", "company": "Example Org", "location": "Sydney", "score": 81}, {"job_id": "job-2", "job_title": "Data Officer", "company": "Example Org", "location": "Sydney", "score": 76}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            result = run_rerank_jobs_build(
+                state,
+                ranking_file="outputs/job-ranking.json",
+                cv_path="data/CV_sample.txt",
+                base_cover_letter_path="data/CL_sample.txt",
+                jobs_file="outputs/jobs/all.jsonl",
+                top_n=2,
+                output_path="outputs/job-ranking-reranked.json",
+            )
+
+            self.assertTrue(result.output_path.exists())
+            self.assertEqual(result.run_manifest["workflow"], "rerank-jobs")
+            self.assertEqual(result.payload["reranked_count"], 2)
+            self.assertEqual(result.payload["rerank_strategy"], "ats-hybrid-v1")
+            self.assertEqual(result.payload["rankings"][0]["rerank_rank"], 1)
 
 
 if __name__ == "__main__":

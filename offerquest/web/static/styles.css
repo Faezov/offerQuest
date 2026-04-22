@@ -477,12 +477,16 @@ h1 {
 }
 
 .primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: fit-content;
   padding: 0.9rem 1.2rem;
   border: 0;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--accent), #115e59);
   color: white;
+  text-decoration: none;
   font: inherit;
   font-weight: 700;
   cursor: pointer;

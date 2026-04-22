@@ -81,6 +81,18 @@ Move up to a stronger model once the local setup is working:
 ./scripts/ollama-local.sh pull qwen3:8b
 ```
 
+Pull the curated stronger model set for cover-letter A/B testing:
+
+```bash
+./scripts/pull-cover-letter-models.sh
+```
+
+Include stretch models that may run slower on a ~12 GB laptop GPU:
+
+```bash
+./scripts/pull-cover-letter-models.sh --all
+```
+
 Generate an employer-specific cover letter with Ollama:
 
 ```bash
@@ -120,6 +132,30 @@ python3 -m offerquest generate-cover-letters-llm \
   --docx \
   --model qwen3:8b \
   --timeout-seconds 180
+```
+
+Run a single-job A/B test across the curated stronger model set:
+
+```bash
+./scripts/run-cover-letter-ab-test.sh \
+  --cv data/CV_BF_20260415.docx \
+  --base-cover-letter data/CL_BF_20260415.doc \
+  --jobs-file outputs/jobs/adzuna-au.jsonl \
+  --job-id adzuna:5686608390 \
+  --output-dir outputs/ab-tests/mane
+```
+
+Run a top-job A/B test across the curated stronger model set:
+
+```bash
+./scripts/run-cover-letter-ab-test.sh \
+  --cv data/CV_BF_20260415.docx \
+  --base-cover-letter data/CL_BF_20260415.doc \
+  --jobs-file outputs/jobs/all.jsonl \
+  --ranking-file outputs/job-ranking-docx.json \
+  --output-dir outputs/ab-tests/top-jobs \
+  --top 3 \
+  --docx
 ```
 
 Score one job description:
@@ -238,6 +274,7 @@ python3 -m offerquest rank-jobs \
 - `ats-check` is an ATS-style heuristic review, not a vendor-specific simulation of Workday, Greenhouse, Lever, or Taleo.
 - `fetch-adzuna` uses `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` automatically if you do not pass them as flags.
 - The Ollama-backed cover letter commands require a local Ollama server and a pulled model such as `qwen3:0.6b` for a quick smoke test or `qwen3:8b` for better quality.
+- The curated stronger model set currently favors `qwen3:8b`, `gemma3:12b`, and `qwen3:14b`, with `mistral-small` treated as a stretch option because it is more likely to spill beyond a ~12 GB GPU.
 - `./scripts/ollama-local.sh` keeps the Ollama home directory and model cache under `.ollama-home/` in this repo, which avoids mixing job-search models into your normal shell environment.
 - Qwen3 thinking is enabled by default in Ollama, so OfferQuest disables it for cover-letter generation and uses a longer request timeout to give local CPU inference enough time to return final JSON.
 - The lightweight fallback binary under `.tools/ollama-partial/` is enough for CPU inference, but GPU acceleration needs the full local install from `./scripts/install-ollama-local.sh` or a normal system-wide Ollama install.

@@ -409,7 +409,6 @@ def _cmd_build_profile(args: argparse.Namespace, parser: argparse.ArgumentParser
         output_path=args.output,
         artifact_kind="profile",
         metadata={"source_files": profile.get("source_files", {})},
-        label=args.output.stem if args.output else None,
     )
     print(json.dumps(profile, indent=2))
     return 0
@@ -438,15 +437,9 @@ def _cmd_generate_cover_letter(args: argparse.Namespace, parser: argparse.Argume
             base_cover_letter_path=args.base_cover_letter,
         )
     else:
-        if not args.job_id:
-            parser.error("--job-id is required when using --jobs-file")
-        jobs = read_job_records(args.jobs_file)
-        job_record = find_job_record(jobs, args.job_id)
-        if job_record is None:
-            parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
         payload = generate_cover_letter_for_job_record(
             args.cv,
-            job_record,
+            resolve_job_record(args, parser),
             base_cover_letter_path=args.base_cover_letter,
         )
 
@@ -479,15 +472,9 @@ def _cmd_generate_cover_letter_llm(args: argparse.Namespace, parser: argparse.Ar
     project_state = ProjectState.from_root(Path.cwd())
     if args.job:
         parser.error("--job is not yet supported for generate-cover-letter-llm; use --jobs-file and --job-id")
-    if not args.job_id:
-        parser.error("--job-id is required when using --jobs-file")
-    jobs = read_job_records(args.jobs_file)
-    job_record = find_job_record(jobs, args.job_id)
-    if job_record is None:
-        parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
     payload = generate_cover_letter_for_job_record_llm(
         args.cv,
-        job_record,
+        resolve_job_record(args, parser),
         base_cover_letter_path=args.base_cover_letter,
         employer_context_path=args.employer_context,
         model=args.model,
@@ -582,15 +569,9 @@ def _cmd_ats_check(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
             cover_letter_path=args.cover_letter,
         )
     else:
-        if not args.job_id:
-            parser.error("--job-id is required when using --jobs-file")
-        jobs = read_job_records(args.jobs_file)
-        job_record = find_job_record(jobs, args.job_id)
-        if job_record is None:
-            parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
         report = ats_check_job_record(
             args.cv,
-            job_record,
+            resolve_job_record(args, parser),
             cover_letter_path=args.cover_letter,
         )
 
@@ -601,7 +582,6 @@ def _cmd_ats_check(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         output_path=args.output,
         artifact_kind="ats_report",
         metadata={"job_title": report.get("job_title"), "assessment": report.get("assessment")},
-        label=args.output.stem if args.output else None,
     )
     print(json.dumps(report, indent=2))
     return 0
@@ -796,7 +776,6 @@ def _cmd_rerank_jobs(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             "reranked_count": payload["reranked_count"],
             "rerank_strategy": payload["rerank_strategy"],
         },
-        label=args.output.stem if args.output else None,
     )
     print(json.dumps(payload, indent=2))
     return 0
@@ -813,7 +792,6 @@ def _cmd_score_job(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         output_path=args.output,
         artifact_kind="job_score",
         metadata={"job_title": result.get("job_title"), "score": result.get("score")},
-        label=args.output.stem if args.output else None,
     )
     print(json.dumps(result, indent=2))
     return 0
@@ -839,7 +817,6 @@ def _cmd_rank_jobs(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         output_path=args.output,
         artifact_kind="ranking",
         metadata={"job_count": payload["job_count"]},
-        label=args.output.stem if args.output else None,
     )
     print(json.dumps(payload, indent=2))
     return 0
@@ -960,8 +937,18 @@ def maybe_record_run(
         workflow,
         artifacts=[{"kind": artifact_kind, "path": output_path}],
         metadata=metadata,
-        label=label,
+        label=label if label is not None else output_path.stem,
     )
+
+
+def resolve_job_record(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict:
+    if not args.job_id:
+        parser.error("--job-id is required when using --jobs-file")
+    jobs = read_job_records(args.jobs_file)
+    job_record = find_job_record(jobs, args.job_id)
+    if job_record is None:
+        parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
+    return job_record
 
 
 def record_run(

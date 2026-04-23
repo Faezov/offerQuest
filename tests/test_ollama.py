@@ -4,7 +4,12 @@ import json
 import unittest
 from unittest.mock import patch
 
-from offerquest.ollama import generate_structured_response, get_ollama_status
+from offerquest.ollama import (
+    build_ollama_pull_selection,
+    generate_structured_response,
+    get_ollama_status,
+    select_default_ollama_model,
+)
 
 
 class OllamaTests(unittest.TestCase):
@@ -24,6 +29,28 @@ class OllamaTests(unittest.TestCase):
 
         self.assertTrue(status["reachable"])
         self.assertEqual(status["models"][0]["name"], "qwen3:8b")
+        self.assertTrue(status["has_models"])
+
+    def test_select_default_ollama_model_prefers_installed_recommended_model(self) -> None:
+        status = {
+            "models": [
+                {"name": "gemma3:12b"},
+                {"name": "custom-model:latest"},
+            ]
+        }
+
+        model = select_default_ollama_model(status)
+
+        self.assertEqual(model, "gemma3:12b")
+
+    def test_build_ollama_pull_selection_defaults_to_recommended_models(self) -> None:
+        models = build_ollama_pull_selection(
+            requested_models=[],
+            use_recommended=False,
+            use_all=False,
+        )
+
+        self.assertEqual(models, ["qwen3:8b", "gemma3:12b", "qwen3:14b"])
 
     def test_generate_structured_response_parses_json_content(self) -> None:
         payload = {

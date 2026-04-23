@@ -92,9 +92,41 @@
             <h3>LLM Settings</h3>
             <p class="subsection__summary">These fields are only used when draft mode is set to <code>LLM draft</code>.</p>
 
+            {% if not view.ollama_status.command_available and not view.ollama_status.reachable %}
+              <div class="callout">
+                <p><strong>Ollama CLI not found.</strong> Install Ollama first, then run <code>offerquest ollama serve</code> and <code>offerquest ollama pull</code>.</p>
+                <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
+              </div>
+            {% elif not view.ollama_status.reachable %}
+              <div class="callout">
+                <p><strong>Ollama server not reachable.</strong> Start it with <code>offerquest ollama serve</code>, then refresh this page.</p>
+                <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
+              </div>
+            {% elif not view.available_llm_models %}
+              <div class="callout">
+                <p><strong>No Ollama models installed yet.</strong> Pull a recommended model with <code>offerquest ollama pull</code>.</p>
+                <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
+              </div>
+            {% else %}
+              <div class="callout">
+                <p><strong>Installed models:</strong> {{ view.available_llm_models | join(", ") }}</p>
+                {% if view.ollama_status.missing_recommended_models %}
+                  <p><strong>Still recommended:</strong> {{ view.ollama_status.missing_recommended_models | join(", ") }}</p>
+                {% endif %}
+              </div>
+            {% endif %}
+
             <label class="field">
               <span>Model</span>
-              <input type="text" name="llm_model" value="{{ view.selected_llm_model }}">
+              {% if view.available_llm_models %}
+                <select name="llm_model">
+                  {% for model_name in view.available_llm_models %}
+                    <option value="{{ model_name }}" {% if model_name == view.selected_llm_model %}selected{% endif %}>{{ model_name }}</option>
+                  {% endfor %}
+                </select>
+              {% else %}
+                <input type="text" name="llm_model" value="{{ view.selected_llm_model }}">
+              {% endif %}
             </label>
 
             <label class="field">
@@ -107,6 +139,13 @@
               <input type="text" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}">
             </label>
           </div>
+
+          {% if view.selected_draft_mode == "llm" and view.ollama_needs_setup %}
+            <div class="callout">
+              <p><strong>LLM drafts are not ready yet.</strong> Finish the Ollama setup flow first, then come back here to generate the draft.</p>
+              <p><a class="primary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Go to Ollama Setup</a></p>
+            </div>
+          {% endif %}
 
           <button class="primary-button" type="submit">Generate Draft</button>
         </form>

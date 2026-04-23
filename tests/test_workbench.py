@@ -15,6 +15,7 @@ from offerquest.workbench import (
     build_dashboard_view,
     build_job_sources_view,
     build_latest_rankings_view,
+    build_ollama_setup_view,
     build_profile_form_view,
     build_rerank_jobs_form_view,
     build_resume_tailored_draft_form_view,
@@ -25,6 +26,7 @@ from offerquest.workbench import (
     run_job_source_delete,
     run_job_source_save,
     run_job_source_toggle,
+    run_ollama_models_pull,
     run_refresh_jobs_build,
     run_cover_letter_compare,
     run_cover_letter_build,
@@ -217,6 +219,57 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual(view["source_form_mode"], "edit")
         self.assertEqual(view["source_form"]["name"], "manual")
         self.assertEqual(view["source_form"]["input_path"], "jobs")
+
+    def test_build_ollama_setup_view_summarizes_ready_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = ProjectState.from_root(tmpdir)
+
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": True,
+                    "command_available": True,
+                    "command_source": "repo_local_wrapper",
+                    "has_models": True,
+                    "models": [{"name": "qwen3:8b"}],
+                    "missing_recommended_models": ["gemma3:12b", "qwen3:14b"],
+                },
+            ):
+                view = build_ollama_setup_view(state)
+
+        self.assertEqual(view["status_label"], "Ready")
+        self.assertEqual(view["installed_models"], ["qwen3:8b"])
+        self.assertTrue(view["can_pull_models"])
+
+    def test_run_ollama_models_pull_uses_cli_and_refreshes_status(self) -> None:
+        with patch(
+            "offerquest.workbench.get_ollama_status",
+            side_effect=[
+                {
+                    "reachable": True,
+                    "command_available": True,
+                    "has_models": False,
+                    "models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                },
+                {
+                    "reachable": True,
+                    "command_available": True,
+                    "has_models": True,
+                    "models": [{"name": "qwen3:8b"}],
+                    "missing_recommended_models": [],
+                },
+            ],
+        ):
+            with patch("offerquest.workbench.run_ollama_cli") as cli_mock:
+                result = run_ollama_models_pull(
+                    base_url="http://localhost:11434",
+                    models=["qwen3:8b"],
+                )
+
+        self.assertEqual(result.pulled_models, ("qwen3:8b",))
+        self.assertEqual(result.ollama_status["models"][0]["name"], "qwen3:8b")
+        self.assertEqual(cli_mock.call_args.args, (["pull", "qwen3:8b"],))
 
     def test_run_job_source_save_creates_source_and_syncs_merge_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -443,7 +496,16 @@ class WorkbenchTests(unittest.TestCase):
             )
 
             state = ProjectState.from_root(root)
-            view = build_cover_letter_form_view(state, job_id="job-1")
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": True,
+                    "models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                },
+            ):
+                view = build_cover_letter_form_view(state, job_id="job-1")
 
         self.assertEqual(view["selected_job"]["job_id"], "job-1")
         self.assertEqual(view["selected_jobs_file"], "outputs/jobs/all.jsonl")
@@ -468,11 +530,25 @@ class WorkbenchTests(unittest.TestCase):
             )
 
             state = ProjectState.from_root(root)
-            view = build_cover_letter_form_view(state, job_id="job-1", draft_mode="llm")
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": True,
+                    "command_available": True,
+                    "models": [
+                        {"name": "qwen3:8b"},
+                        {"name": "gemma3:12b"},
+                    ],
+                    "missing_recommended_models": ["qwen3:14b"],
+                },
+            ):
+                view = build_cover_letter_form_view(state, job_id="job-1", draft_mode="llm")
 
         self.assertEqual(view["selected_draft_mode"], "llm")
         self.assertEqual(view["selected_output"], "outputs/workbench/example-org-senior-data-analyst-llm.txt")
         self.assertEqual(view["selected_llm_model"], "qwen3:8b")
+        self.assertEqual(view["available_llm_models"], ["qwen3:8b", "gemma3:12b"])
+        self.assertFalse(view["ollama_needs_setup"])
 
     def test_build_cover_letter_compare_view_prefills_both_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -494,11 +570,21 @@ class WorkbenchTests(unittest.TestCase):
             )
 
             state = ProjectState.from_root(root)
-            view = build_cover_letter_compare_view(state, job_id="job-1")
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": True,
+                    "models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                },
+            ):
+                view = build_cover_letter_compare_view(state, job_id="job-1")
 
         self.assertEqual(view["selected_rule_based_output"], "outputs/workbench/example-org-senior-data-analyst.txt")
         self.assertEqual(view["selected_llm_output"], "outputs/workbench/example-org-senior-data-analyst-llm.txt")
         self.assertEqual(view["selected_llm_model"], "qwen3:8b")
+        self.assertTrue(view["ollama_needs_setup"])
 
     def test_build_resume_tailoring_form_view_prefills_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

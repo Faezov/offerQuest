@@ -48,6 +48,40 @@ class CliProductizationTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("Overall status: needs setup", rendered)
 
+    def test_main_ollama_pull_dry_run_lists_recommended_models(self) -> None:
+        output = io.StringIO()
+
+        with patch("offerquest.cli.run_ollama_cli") as run_mock:
+            with redirect_stdout(output):
+                exit_code = main(["ollama", "pull", "--dry-run"])
+
+        rendered = output.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Selected models:", rendered)
+        self.assertIn("qwen3:8b", rendered)
+        self.assertEqual(run_mock.call_count, 0)
+
+    def test_main_ollama_models_prints_installed_models(self) -> None:
+        output = io.StringIO()
+
+        with patch(
+            "offerquest.cli.get_ollama_status",
+            return_value={
+                "reachable": True,
+                "models": [
+                    {"name": "qwen3:8b"},
+                    {"name": "gemma3:12b"},
+                ],
+            },
+        ):
+            with redirect_stdout(output):
+                exit_code = main(["ollama", "models"])
+
+        rendered = output.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("qwen3:8b", rendered)
+        self.assertIn("gemma3:12b", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

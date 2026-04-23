@@ -39,6 +39,8 @@ If you want OfferQuest to pick a free port automatically:
 offerquest-workbench --root . --port auto
 ```
 
+The workbench includes an `Ollama Setup` page that shows local status, installed models, and recommended model pulls for the LLM draft workflows.
+
 ## Workspace Layout
 
 An OfferQuest workspace keeps user-owned files separate from the installed package:
@@ -55,6 +57,19 @@ Check Ollama connectivity:
 
 ```bash
 offerquest ollama-status
+```
+
+Start the local Ollama server and pull the recommended model set:
+
+```bash
+offerquest ollama serve
+offerquest ollama pull
+```
+
+List installed models:
+
+```bash
+offerquest ollama models
 ```
 
 Build a candidate profile:

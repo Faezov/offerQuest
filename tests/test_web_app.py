@@ -113,6 +113,115 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "image/svg+xml")
         self.assertIn("<svg", response.text)
 
+    def test_ollama_setup_page_renders(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            with patch(
+                "offerquest.web.app.build_ollama_setup_view",
+                return_value={
+                    "selected_base_url": "http://localhost:11434",
+                    "custom_model": "",
+                    "ollama_status": {
+                        "reachable": False,
+                        "command_available": True,
+                        "command_source": "repo_local_wrapper",
+                    },
+                    "installed_models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                    "recommended_models": ["qwen3:8b"],
+                    "stretch_models": ["mistral-small"],
+                    "status_label": "Server Offline",
+                    "status_css_class": "status-chip--muted",
+                    "status_summary": "The Ollama CLI is available, but the server is not reachable yet.",
+                    "can_pull_models": False,
+                    "error": None,
+                    "result": None,
+                    "serve_command": "offerquest ollama serve",
+                    "pull_command": "offerquest ollama pull",
+                    "models_command": "offerquest ollama models",
+                },
+            ):
+                response = client.get("/ollama")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Ollama Setup", response.text)
+        self.assertIn("offerquest ollama serve", response.text)
+
+    def test_ollama_setup_submit_pulls_recommended_models(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+        from offerquest.workbench import PullOllamaModelsResult
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            pull_result = PullOllamaModelsResult(
+                pulled_models=("qwen3:8b",),
+                base_url="http://localhost:11434",
+                ollama_status={
+                    "reachable": True,
+                    "command_available": True,
+                    "models": [{"name": "qwen3:8b"}],
+                    "has_models": True,
+                    "missing_recommended_models": [],
+                },
+            )
+
+            response_view = {
+                "selected_base_url": "http://localhost:11434",
+                "custom_model": "",
+                "ollama_status": pull_result.ollama_status,
+                "installed_models": ["qwen3:8b"],
+                "missing_recommended_models": [],
+                "recommended_models": ["qwen3:8b"],
+                "stretch_models": ["mistral-small"],
+                "status_label": "Ready",
+                "status_css_class": "status-chip--live",
+                "status_summary": "1 installed model(s) ready for use.",
+                "can_pull_models": True,
+                "error": None,
+                "result": pull_result,
+                "serve_command": "offerquest ollama serve",
+                "pull_command": "offerquest ollama pull",
+                "models_command": "offerquest ollama models",
+            }
+
+            with patch(
+                "offerquest.web.app.run_ollama_models_pull",
+                return_value=pull_result,
+            ) as pull_mock:
+                with patch(
+                    "offerquest.web.app.build_ollama_setup_view",
+                    return_value=response_view,
+                ):
+                    response = client.post(
+                        "/ollama",
+                        data={
+                            "intent": "pull_recommended",
+                            "base_url": "http://localhost:11434",
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(pull_mock.call_args.kwargs["models"], ["qwen3:8b", "gemma3:12b", "qwen3:14b"])
+        self.assertIn("Pulled models:", response.text)
+
     def test_dashboard_route_shows_start_here_checklist_for_empty_workspace(self) -> None:
         try:
             from fastapi.testclient import TestClient
@@ -495,10 +604,21 @@ class WebAppTests(unittest.TestCase):
             app = create_app(workspace_root=root)
             client = TestClient(app)
 
-            response = client.get("/cover-letters/new?job_id=job-1")
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": True,
+                    "models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                },
+            ):
+                response = client.get("/cover-letters/new?job_id=job-1")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Generate Cover Letter", response.text)
+        self.assertIn("Open Ollama Setup", response.text)
+        self.assertIn("/ollama?base_url=http://localhost:11434", response.text)
 
     def test_cover_letter_page_renders_llm_mode(self) -> None:
         try:
@@ -528,10 +648,20 @@ class WebAppTests(unittest.TestCase):
             app = create_app(workspace_root=root)
             client = TestClient(app)
 
-            response = client.get("/cover-letters/new?job_id=job-1&mode=llm")
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": True,
+                    "command_available": True,
+                    "models": [{"name": "qwen3:8b"}],
+                    "missing_recommended_models": [],
+                },
+            ):
+                response = client.get("/cover-letters/new?job_id=job-1&mode=llm")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("LLM draft (Ollama)", response.text)
+        self.assertIn("qwen3:8b", response.text)
 
     def test_compare_cover_letters_page_renders(self) -> None:
         try:
@@ -561,10 +691,20 @@ class WebAppTests(unittest.TestCase):
             app = create_app(workspace_root=root)
             client = TestClient(app)
 
-            response = client.get("/cover-letters/compare?job_id=job-1")
+            with patch(
+                "offerquest.workbench.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": True,
+                    "models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                },
+            ):
+                response = client.get("/cover-letters/compare?job_id=job-1")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Compare Draft Styles", response.text)
+        self.assertIn("Go to Ollama Setup", response.text)
 
 
 if __name__ == "__main__":

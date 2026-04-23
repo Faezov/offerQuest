@@ -31,7 +31,12 @@ from .jobs import (
     write_job_records,
 )
 from . import __version__
-from .ollama import DEFAULT_OLLAMA_BASE_URL, get_ollama_status
+from .ollama import (
+    DEFAULT_OLLAMA_BASE_URL,
+    build_ollama_pull_selection,
+    get_ollama_status,
+    run_ollama_cli,
+)
 from .profile import build_candidate_profile, build_profile_from_files
 from .reranking import rerank_job_files, rerank_job_records
 from .scoring import rank_job_files, rank_job_records, score_job_file
@@ -166,6 +171,58 @@ def build_parser() -> argparse.ArgumentParser:
     cover_letters_llm_parser.add_argument("--model", default="qwen3:8b", help="Ollama model name, default: qwen3:8b")
     cover_letters_llm_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
     cover_letters_llm_parser.add_argument("--timeout-seconds", type=int, default=180, help="Ollama request timeout in seconds, default: 180")
+
+    ollama_parser = subparsers.add_parser(
+        "ollama",
+        help="Manage the local Ollama runtime and installed models",
+    )
+    ollama_subparsers = ollama_parser.add_subparsers(dest="ollama_command", required=True)
+
+    ollama_status_nested_parser = ollama_subparsers.add_parser(
+        "status",
+        help="Show whether Ollama is reachable and which models are installed",
+    )
+    ollama_status_nested_parser.add_argument(
+        "--base-url",
+        default=DEFAULT_OLLAMA_BASE_URL,
+        help="Ollama base URL, default: http://localhost:11434",
+    )
+
+    ollama_models_parser = ollama_subparsers.add_parser(
+        "models",
+        help="List installed models from the current Ollama server",
+    )
+    ollama_models_parser.add_argument(
+        "--base-url",
+        default=DEFAULT_OLLAMA_BASE_URL,
+        help="Ollama base URL, default: http://localhost:11434",
+    )
+
+    ollama_pull_parser = ollama_subparsers.add_parser(
+        "pull",
+        help="Pull one or more Ollama models, defaulting to OfferQuest's recommended set",
+    )
+    ollama_pull_parser.add_argument("models", nargs="*", help="Specific model names to pull")
+    ollama_pull_parser.add_argument(
+        "--recommended",
+        action="store_true",
+        help="Pull the recommended OfferQuest model set",
+    )
+    ollama_pull_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Pull the recommended and stretch model set",
+    )
+    ollama_pull_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the models that would be pulled without pulling them",
+    )
+
+    ollama_serve_parser = ollama_subparsers.add_parser(
+        "serve",
+        help="Start the local Ollama server using the detected Ollama CLI",
+    )
 
     ollama_status_parser = subparsers.add_parser(
         "ollama-status",
@@ -317,6 +374,51 @@ def main(argv: list[str] | None = None) -> int:
     project_state = ProjectState.from_root(Path.cwd())
 
     try:
+        if args.command == "ollama":
+            if args.ollama_command == "status":
+                print(json.dumps(get_ollama_status(args.base_url), indent=2))
+                return 0
+
+            if args.ollama_command == "models":
+                status = get_ollama_status(args.base_url)
+                if not status.get("reachable"):
+                    parser.exit(
+                        2,
+                        "error: Ollama server is not reachable. Start it with `offerquest ollama serve` and try again.\n",
+                    )
+                model_names = [
+                    str(model.get("name"))
+                    for model in status.get("models", [])
+                    if model.get("name")
+                ]
+                if not model_names:
+                    print("No models installed yet.")
+                    return 0
+                print("\n".join(model_names))
+                return 0
+
+            if args.ollama_command == "pull":
+                models = build_ollama_pull_selection(
+                    requested_models=args.models,
+                    use_recommended=args.recommended,
+                    use_all=args.all,
+                )
+                if not models:
+                    parser.exit(2, "error: No models selected.\n")
+                print("Selected models:")
+                for model in models:
+                    print(f"- {model}")
+                if args.dry_run:
+                    return 0
+                for model in models:
+                    print(f"\nPulling {model}")
+                    run_ollama_cli(["pull", model])
+                print(f"\nFinished pulling {len(models)} model(s).")
+                return 0
+
+            if args.ollama_command == "serve":
+                return run_ollama_cli(["serve"])
+
         if args.command == "build-profile":
             profile = build_profile_from_files(args.cv, args.cover_letter)
             write_optional_json(args.output, profile)

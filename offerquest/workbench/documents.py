@@ -150,35 +150,26 @@ def build_cover_letter_form_view(
     field_errors: dict[str, str] | None = None,
     result: BuildCoverLetterResult | None = None,
 ) -> dict[str, Any]:
-    ranking_sources = list_ranking_sources(project_state)
-    selected_source = choose_ranking_source(ranking_sources, ranking_file=ranking_file)
-    selected_job = choose_ranking_job(selected_source, job_id=job_id)
     selected_draft_mode = normalize_draft_mode(draft_mode)
-
-    documents = list_profile_source_files(project_state)
-    jobs_files = list_job_record_files(project_state)
-
-    selected_cv = cv_path or select_default_document(documents, preferred_terms=["cv", "resume"])
-    selected_base_cover_letter = base_cover_letter_path or select_default_document(
-        documents,
-        preferred_terms=["cover", "letter", "cl"],
+    selection = build_cover_letter_selection_context(
+        project_state,
+        ranking_file=ranking_file,
+        job_id=job_id,
+        cv_path=cv_path,
+        base_cover_letter_path=base_cover_letter_path,
+        jobs_file=jobs_file,
     )
-    selected_jobs_file = jobs_file or select_default_jobs_file(jobs_files)
-    selected_output = output_path or suggest_cover_letter_output_path(selected_job, draft_mode=selected_draft_mode)
     ollama_state = build_ollama_form_state(llm_base_url)
 
     return attach_form_feedback(
         {
-            "ranking_sources": ranking_sources,
-            "selected_ranking_file": selected_source["relative_path"] if selected_source else ranking_file,
-            "selected_job": selected_job,
+            **selection,
             "selected_draft_mode": selected_draft_mode,
-            "documents": documents,
-            "jobs_files": jobs_files,
-            "selected_cv": selected_cv,
-            "selected_base_cover_letter": selected_base_cover_letter,
-            "selected_jobs_file": selected_jobs_file,
-            "selected_output": selected_output,
+            "selected_output": output_path
+            or suggest_cover_letter_output_path(
+                selection["selected_job"],
+                draft_mode=selected_draft_mode,
+            ),
             "selected_llm_model": select_default_ollama_model(
                 ollama_state["status"],
                 explicit_model=llm_model,
@@ -191,9 +182,6 @@ def build_cover_letter_form_view(
             "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
             or not bool(ollama_state["available_models"]),
             "result": result,
-            "has_rankings": bool(ranking_sources),
-            "has_jobs_files": bool(jobs_files),
-            "has_documents": bool(documents),
         },
         error=error,
         field_errors=field_errors,
@@ -334,7 +322,7 @@ def prepare_cover_letter_inputs(
     base_cover_letter_path: str | None,
     jobs_file: str,
     job_id: str,
-) -> dict[str, Any]:
+) -> tuple[Path, Path | None, dict[str, Any]]:
     cv_full_path = resolve_workspace_input_path(project_state, cv_path)
     base_cover_letter_full_path = (
         resolve_workspace_input_path(project_state, base_cover_letter_path)
@@ -355,17 +343,14 @@ def prepare_cover_letter_inputs(
     if job_record is None:
         raise ValueError(f"Job id not found in {jobs_file}: {job_id}")
 
-    return {
-        "cv_full_path": cv_full_path,
-        "base_cover_letter_full_path": base_cover_letter_full_path,
-        "jobs_file_full_path": jobs_file_full_path,
-        "job_record": job_record,
-    }
+    return cv_full_path, base_cover_letter_full_path, job_record
 
 
 def generate_cover_letter_payload(
+    cv_full_path: Path,
+    job_record: dict[str, Any],
     *,
-    prepared: dict[str, Any],
+    base_cover_letter_path: Path | None,
     draft_mode: str,
     llm_model: str | None = None,
     llm_base_url: str | None = None,
@@ -375,18 +360,18 @@ def generate_cover_letter_payload(
 
     if normalized_draft_mode == "llm":
         return generate_cover_letter_for_job_record_llm(
-            prepared["cv_full_path"],
-            prepared["job_record"],
-            base_cover_letter_path=prepared["base_cover_letter_full_path"],
+            cv_full_path,
+            job_record,
+            base_cover_letter_path=base_cover_letter_path,
             model=llm_model or "qwen3:8b",
             base_url=llm_base_url or DEFAULT_OLLAMA_BASE_URL,
             timeout_seconds=llm_timeout_seconds or 180,
         )
 
     return generate_cover_letter_for_job_record(
-        prepared["cv_full_path"],
-        prepared["job_record"],
-        base_cover_letter_path=prepared["base_cover_letter_full_path"],
+        cv_full_path,
+        job_record,
+        base_cover_letter_path=base_cover_letter_path,
     )
 
 
@@ -407,32 +392,6 @@ def write_cover_letter_draft_artifact(
     )
 
 
-def build_cover_letter_draft_artifact(
-    project_state: ProjectState,
-    *,
-    prepared: dict[str, Any],
-    draft_mode: str,
-    output_path: str,
-    llm_model: str | None = None,
-    llm_base_url: str | None = None,
-    llm_timeout_seconds: int | None = None,
-) -> CoverLetterDraftArtifact:
-    output_full_path = resolve_workspace_output_path(project_state, output_path)
-    payload = generate_cover_letter_payload(
-        prepared=prepared,
-        draft_mode=draft_mode,
-        llm_model=llm_model,
-        llm_base_url=llm_base_url,
-        llm_timeout_seconds=llm_timeout_seconds,
-    )
-    return write_cover_letter_draft_artifact(
-        project_state,
-        draft_mode=normalize_draft_mode(draft_mode),
-        payload=payload,
-        output_full_path=output_full_path,
-    )
-
-
 def run_cover_letter_build(
     project_state: ProjectState,
     *,
@@ -446,21 +405,29 @@ def run_cover_letter_build(
     llm_base_url: str | None = None,
     llm_timeout_seconds: int | None = None,
 ) -> BuildCoverLetterResult:
-    prepared = prepare_cover_letter_inputs(
+    normalized_draft_mode = normalize_draft_mode(draft_mode)
+    cv_full_path, base_cover_letter_full_path, job_record = prepare_cover_letter_inputs(
         project_state,
         cv_path=cv_path,
         base_cover_letter_path=base_cover_letter_path,
         jobs_file=jobs_file,
         job_id=job_id,
     )
-    draft = build_cover_letter_draft_artifact(
-        project_state,
-        prepared=prepared,
-        draft_mode=draft_mode,
-        output_path=output_path,
+    output_full_path = resolve_workspace_output_path(project_state, output_path)
+    payload = generate_cover_letter_payload(
+        cv_full_path,
+        job_record,
+        base_cover_letter_path=base_cover_letter_full_path,
+        draft_mode=normalized_draft_mode,
         llm_model=llm_model,
         llm_base_url=llm_base_url,
         llm_timeout_seconds=llm_timeout_seconds,
+    )
+    draft = write_cover_letter_draft_artifact(
+        project_state,
+        draft_mode=normalized_draft_mode,
+        payload=payload,
+        output_full_path=output_full_path,
     )
 
     run_manifest = project_state.record_run(
@@ -499,7 +466,7 @@ def run_cover_letter_compare(
     llm_base_url: str | None = None,
     llm_timeout_seconds: int | None = None,
 ) -> CompareCoverLettersResult:
-    prepared = prepare_cover_letter_inputs(
+    cv_full_path, base_cover_letter_full_path, job_record = prepare_cover_letter_inputs(
         project_state,
         cv_path=cv_path,
         base_cover_letter_path=base_cover_letter_path,
@@ -513,11 +480,15 @@ def run_cover_letter_compare(
         raise ValueError("Rule-based and LLM output paths must be different.")
 
     rule_based_payload = generate_cover_letter_payload(
-        prepared=prepared,
+        cv_full_path,
+        job_record,
+        base_cover_letter_path=base_cover_letter_full_path,
         draft_mode="rule_based",
     )
     llm_payload = generate_cover_letter_payload(
-        prepared=prepared,
+        cv_full_path,
+        job_record,
+        base_cover_letter_path=base_cover_letter_full_path,
         draft_mode="llm",
         llm_model=llm_model,
         llm_base_url=llm_base_url,
@@ -569,7 +540,7 @@ def run_resume_tailoring_plan_build(
     job_id: str,
     output_path: str,
 ) -> BuildResumeTailoringPlanResult:
-    prepared = prepare_cover_letter_inputs(
+    cv_full_path, base_cover_letter_full_path, job_record = prepare_cover_letter_inputs(
         project_state,
         cv_path=cv_path,
         base_cover_letter_path=base_cover_letter_path,
@@ -579,9 +550,9 @@ def run_resume_tailoring_plan_build(
     output_full_path = resolve_workspace_output_path(project_state, output_path)
 
     plan = build_resume_tailoring_plan_for_job_record(
-        prepared["cv_full_path"],
-        prepared["job_record"],
-        cover_letter_path=prepared["base_cover_letter_full_path"],
+        cv_full_path,
+        job_record,
+        cover_letter_path=base_cover_letter_full_path,
     )
 
     output_full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -619,7 +590,7 @@ def run_resume_tailored_draft_build(
     export_docx: bool = False,
     docx_output_path: str | None = None,
 ) -> BuildResumeTailoredDraftResult:
-    prepared = prepare_cover_letter_inputs(
+    cv_full_path, base_cover_letter_full_path, job_record = prepare_cover_letter_inputs(
         project_state,
         cv_path=cv_path,
         base_cover_letter_path=base_cover_letter_path,
@@ -642,9 +613,9 @@ def run_resume_tailored_draft_build(
         raise ValueError("DOCX output path must be different from the analysis JSON path.")
 
     comparison = build_resume_tailored_draft_for_job_record(
-        prepared["cv_full_path"],
-        prepared["job_record"],
-        cover_letter_path=prepared["base_cover_letter_full_path"],
+        cv_full_path,
+        job_record,
+        cover_letter_path=base_cover_letter_full_path,
     )
 
     output_full_path.parent.mkdir(parents=True, exist_ok=True)

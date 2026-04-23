@@ -206,6 +206,25 @@ def summarize_field_errors(
     return fallback
 
 
+def parse_optional_positive_int(
+    raw_value: str | None,
+    *,
+    invalid_message: str,
+    minimum_message: str,
+) -> tuple[int | None, str | None]:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None, None
+
+    try:
+        value = int(text)
+    except ValueError:
+        return None, invalid_message
+    if value < 1:
+        return None, minimum_message
+    return value, None
+
+
 def map_common_form_error(message: str) -> FieldErrors:
     if message.startswith("CV file not found:"):
         return {"cv_path": message}
@@ -376,7 +395,7 @@ def build_navigation_groups(request: Any) -> list[dict[str, Any]]:
     return groups
 
 
-def build_page_chrome(request: Any, page_title: str) -> dict[str, Any]:
+def build_page_chrome(request: Any) -> dict[str, Any]:
     route = request.scope.get("route")
     route_name = getattr(route, "name", None)
     chrome = PAGE_CHROME.get(
@@ -491,16 +510,16 @@ def create_app(
     app.state.ollama_jobs = OllamaJobStore()
 
     def render(request: Request, template_name: str, context: dict[str, Any]) -> HTMLResponse:
-        page_title = str(context.get("page_title") or "OfferQuest")
         base_context = {
             "request": request,
+            "page_title": str(context.get("page_title") or "OfferQuest"),
             "workspace_root": str(project_state.root),
             "ollama_setup_href": safe_request_url_for(
                 request,
                 "ollama_setup",
                 fallback="/ollama",
             ),
-            **build_page_chrome(request, page_title),
+            **build_page_chrome(request),
         }
         return templates.TemplateResponse(
             request,
@@ -531,20 +550,6 @@ def create_app(
                 raise ValueError("Custom model name is required.")
             return [custom_model]
         raise ValueError("Unknown Ollama setup action.")
-
-    def build_models_action_result(
-        *,
-        title: str,
-        pulled_models: tuple[str, ...],
-        installed_count: int,
-    ) -> dict[str, Any]:
-        return {
-            "title": title,
-            "details": [
-                f"Pulled models: {', '.join(pulled_models)}",
-                f"Installed models now: {installed_count}",
-            ],
-        }
 
     def update_ollama_job_from_progress(job_id: str, payload: dict[str, Any]) -> None:
         updates: dict[str, Any] = {}
@@ -594,11 +599,13 @@ def create_app(
                     "pull_missing_recommended": "Missing recommended models pulled",
                     "pull_custom": "Custom model pulled",
                 }[intent]
-                action_result = build_models_action_result(
-                    title=title,
-                    pulled_models=result.pulled_models,
-                    installed_count=len(result.ollama_status.get("models", [])),
-                )
+                action_result = {
+                    "title": title,
+                    "details": [
+                        f"Pulled models: {', '.join(result.pulled_models)}",
+                        f"Installed models now: {len(result.ollama_status.get('models', []))}",
+                    ],
+                }
             elif intent == "download_runtime":
                 install_result = run_local_ollama_runtime_install(
                     progress_callback=lambda payload: update_ollama_job_from_progress(job_id, payload),
@@ -896,6 +903,23 @@ def create_app(
         cv_path = str(form.get("cv_path") or "").strip()
         cover_letter_path = str(form.get("cover_letter_path") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
+        page_title = "Build Profile"
+
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
+            return render(
+                request,
+                "build_profile.html",
+                {
+                    "page_title": page_title,
+                    "view": build_profile_form_view(
+                        project_state,
+                        cv_path=cv_path or None,
+                        cover_letter_path=cover_letter_path or None,
+                        output_path=output_path or None,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         field_errors = collect_required_field_errors(
             {
@@ -910,20 +934,9 @@ def create_app(
             ],
         )
         if field_errors:
-            return render(
-                request,
-                "build_profile.html",
-                {
-                    "page_title": "Build Profile",
-                    "view": build_profile_form_view(
-                        project_state,
-                        cv_path=cv_path or None,
-                        cover_letter_path=cover_letter_path or None,
-                        output_path=output_path or None,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=summarize_field_errors(field_errors),
+                field_errors=field_errors,
             )
 
         try:
@@ -934,36 +947,12 @@ def create_app(
                 output_path=output_path,
             )
         except (ValueError, OfferQuestError) as exc:
-            return render(
-                request,
-                "build_profile.html",
-                {
-                    "page_title": "Build Profile",
-                    "view": build_profile_form_view(
-                        project_state,
-                        cv_path=cv_path,
-                        cover_letter_path=cover_letter_path,
-                        output_path=output_path,
-                        error=str(exc),
-                        field_errors=map_common_form_error(str(exc)),
-                    ),
-                },
+            return render_view(
+                error=str(exc),
+                field_errors=map_common_form_error(str(exc)),
             )
 
-        return render(
-            request,
-            "build_profile.html",
-            {
-                "page_title": "Build Profile",
-                "view": build_profile_form_view(
-                    project_state,
-                    cv_path=cv_path,
-                    cover_letter_path=cover_letter_path,
-                    output_path=output_path,
-                    result=result,
-                ),
-            },
-        )
+        return render_view(result=result)
 
     @app.post("/job-sources", response_class=HTMLResponse)
     async def job_sources_submit(request: Request) -> HTMLResponse:
@@ -988,28 +977,40 @@ def create_app(
             "input_path": str(form.get("manual_input_path") or "").strip(),
         }
         source_index_raw = str(form.get("source_index") or "").strip()
+        page_title = "Job Sources"
+
+        def render_view(
+            *,
+            app_id_value: str | None = app_id or None,
+            config_path_value: str | None = config_path or None,
+            output_dir_value: str | None = output_dir or None,
+            **view_kwargs: Any,
+        ) -> HTMLResponse:
+            return render(
+                request,
+                "job_sources.html",
+                {
+                    "page_title": page_title,
+                    "view": build_job_sources_view(
+                        project_state,
+                        app_id=app_id_value,
+                        refresh_config_path=config_path_value,
+                        refresh_output_dir=output_dir_value,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         if intent in {"save_source", "restore_source"}:
             source_field_errors = build_job_source_field_errors(source_form_data)
             if source_field_errors:
-                return render(
-                    request,
-                    "job_sources.html",
-                    {
-                        "page_title": "Job Sources",
-                        "view": build_job_sources_view(
-                            project_state,
-                            app_id=app_id or None,
-                            refresh_config_path=config_path or None,
-                            refresh_output_dir=output_dir or None,
-                            source_form_data=source_form_data,
-                            source_form_error=summarize_field_errors(
-                                source_field_errors,
-                                fallback="Please fix the highlighted source fields and try again.",
-                            ),
-                            source_field_errors=source_field_errors,
-                        ),
-                    },
+                return render_view(
+                    source_form_data=source_form_data,
+                    source_form_error=summarize_field_errors(
+                        source_field_errors,
+                        fallback="Please fix the highlighted source fields and try again.",
+                    ),
+                    source_field_errors=source_field_errors,
                 )
             try:
                 source_result = run_job_source_save(
@@ -1018,57 +1019,23 @@ def create_app(
                 )
             except (OSError, ValueError) as exc:
                 source_field_errors = map_job_source_exception_to_field_errors(str(exc))
-                return render(
-                    request,
-                    "job_sources.html",
-                    {
-                        "page_title": "Job Sources",
-                        "view": build_job_sources_view(
-                            project_state,
-                            app_id=app_id or None,
-                            refresh_config_path=config_path or None,
-                            refresh_output_dir=output_dir or None,
-                            source_form_data=source_form_data,
-                            source_form_error=str(exc),
-                            source_field_errors=source_field_errors,
-                        ),
-                    },
+                return render_view(
+                    source_form_data=source_form_data,
+                    source_form_error=str(exc),
+                    source_field_errors=source_field_errors,
                 )
 
             if intent == "restore_source":
                 source_result = replace(source_result, action="restored")
 
-            return render(
-                request,
-                "job_sources.html",
-                {
-                    "page_title": "Job Sources",
-                    "view": build_job_sources_view(
-                        project_state,
-                        refresh_config_path=config_path or None,
-                        refresh_output_dir=output_dir or None,
-                        source_form_result=source_result,
-                    ),
-                },
-            )
+            return render_view(app_id_value=None, source_form_result=source_result)
 
         if intent in {"delete_source", "toggle_source"}:
             try:
                 source_index = int(source_index_raw)
             except ValueError:
-                return render(
-                    request,
-                    "job_sources.html",
-                    {
-                        "page_title": "Job Sources",
-                        "view": build_job_sources_view(
-                            project_state,
-                            app_id=app_id or None,
-                            refresh_config_path=config_path or None,
-                            refresh_output_dir=output_dir or None,
-                            source_form_error="Selected source index must be a whole number.",
-                        ),
-                    },
+                return render_view(
+                    source_form_error="Selected source index must be a whole number.",
                 )
 
             try:
@@ -1078,34 +1045,11 @@ def create_app(
                     else run_job_source_toggle(project_state, source_index=source_index)
                 )
             except (OSError, ValueError) as exc:
-                return render(
-                    request,
-                    "job_sources.html",
-                    {
-                        "page_title": "Job Sources",
-                        "view": build_job_sources_view(
-                            project_state,
-                            app_id=app_id or None,
-                            refresh_config_path=config_path or None,
-                            refresh_output_dir=output_dir or None,
-                            source_form_error=str(exc),
-                        ),
-                    },
+                return render_view(
+                    source_form_error=str(exc),
                 )
 
-            return render(
-                request,
-                "job_sources.html",
-                {
-                    "page_title": "Job Sources",
-                    "view": build_job_sources_view(
-                        project_state,
-                        refresh_config_path=config_path or None,
-                        refresh_output_dir=output_dir or None,
-                        source_form_result=source_result,
-                    ),
-                },
-            )
+            return render_view(app_id_value=None, source_form_result=source_result)
 
         if intent == "refresh_jobs":
             refresh_field_errors = collect_required_field_errors(
@@ -1119,23 +1063,12 @@ def create_app(
                 ],
             )
             if refresh_field_errors:
-                return render(
-                    request,
-                    "job_sources.html",
-                    {
-                        "page_title": "Job Sources",
-                        "view": build_job_sources_view(
-                            project_state,
-                            app_id=app_id or None,
-                            refresh_config_path=config_path or None,
-                            refresh_output_dir=output_dir or None,
-                            refresh_error=summarize_field_errors(
-                                refresh_field_errors,
-                                fallback="Please fill in the required refresh settings.",
-                            ),
-                            refresh_field_errors=refresh_field_errors,
-                        ),
-                    },
+                return render_view(
+                    refresh_error=summarize_field_errors(
+                        refresh_field_errors,
+                        fallback="Please fill in the required refresh settings.",
+                    ),
+                    refresh_field_errors=refresh_field_errors,
                 )
 
             try:
@@ -1145,34 +1078,18 @@ def create_app(
                     output_dir=output_dir,
                 )
             except (OSError, ValueError, OfferQuestError) as exc:
-                return render(
-                    request,
-                    "job_sources.html",
-                    {
-                        "page_title": "Job Sources",
-                        "view": build_job_sources_view(
-                            project_state,
-                            app_id=app_id or None,
-                            refresh_config_path=config_path,
-                            refresh_output_dir=output_dir,
-                            refresh_error=str(exc),
-                            refresh_field_errors=map_common_form_error(str(exc)),
-                        ),
-                    },
+                return render_view(
+                    config_path_value=config_path,
+                    output_dir_value=output_dir,
+                    refresh_error=str(exc),
+                    refresh_field_errors=map_common_form_error(str(exc)),
                 )
 
-            return render(
-                request,
-                "job_sources.html",
-                {
-                    "page_title": "Job Sources",
-                    "view": build_job_sources_view(
-                        project_state,
-                        refresh_config_path=config_path,
-                        refresh_output_dir=output_dir,
-                        refresh_result=refresh_result,
-                    ),
-                },
+            return render_view(
+                app_id_value=None,
+                config_path_value=config_path,
+                output_dir_value=output_dir,
+                refresh_result=refresh_result,
             )
 
         try:
@@ -1187,36 +1104,12 @@ def create_app(
                     "app_id": "Adzuna app id is required.",
                     "app_key": "Adzuna app key is required.",
                 }
-            return render(
-                request,
-                "job_sources.html",
-                {
-                    "page_title": "Job Sources",
-                    "view": build_job_sources_view(
-                        project_state,
-                        app_id=app_id or None,
-                        refresh_config_path=config_path or None,
-                        refresh_output_dir=output_dir or None,
-                        credentials_error=str(exc),
-                        credentials_field_errors=credentials_field_errors,
-                    ),
-                },
+            return render_view(
+                credentials_error=str(exc),
+                credentials_field_errors=credentials_field_errors,
             )
 
-        return render(
-            request,
-            "job_sources.html",
-                {
-                    "page_title": "Job Sources",
-                    "view": build_job_sources_view(
-                        project_state,
-                        app_id=app_id or None,
-                        refresh_config_path=config_path or None,
-                        refresh_output_dir=output_dir or None,
-                        credentials_result=credentials_result,
-                    ),
-                },
-        )
+        return render_view(credentials_result=credentials_result)
 
     @app.post("/ollama", response_class=HTMLResponse)
     async def ollama_setup_submit(request: Request) -> HTMLResponse:
@@ -1224,22 +1117,28 @@ def create_app(
         intent = str(form.get("intent") or "refresh_status").strip()
         base_url = str(form.get("base_url") or "").strip() or None
         custom_model = str(form.get("custom_model") or "").strip() or None
+        page_title = "Ollama Setup"
 
-        if intent == "refresh_status":
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
             return render(
                 request,
                 "ollama_setup.html",
                 {
-                    "page_title": "Ollama Setup",
+                    "page_title": page_title,
                     "view": build_ollama_setup_view(
                         project_state,
                         base_url=base_url,
                         custom_model=custom_model,
+                        **view_kwargs,
                     ),
                 },
             )
 
+        if intent == "refresh_status":
+            return render_view()
+
         try:
+            result = None
             action_result: dict[str, Any] | None = None
             if intent == "pull_recommended":
                 models = resolve_ollama_action_models(
@@ -1323,34 +1222,11 @@ def create_app(
             else:
                 raise ValueError("Unknown Ollama setup action.")
         except (ValueError, OfferQuestError) as exc:
-            return render(
-                request,
-                "ollama_setup.html",
-                {
-                    "page_title": "Ollama Setup",
-                    "view": build_ollama_setup_view(
-                        project_state,
-                        base_url=base_url,
-                        custom_model=custom_model,
-                        error=str(exc),
-                    ),
-                },
+            return render_view(
+                error=str(exc),
             )
 
-        return render(
-            request,
-            "ollama_setup.html",
-            {
-                "page_title": "Ollama Setup",
-                    "view": build_ollama_setup_view(
-                        project_state,
-                        base_url=base_url,
-                        custom_model=custom_model,
-                        result=result,
-                        action_result=action_result,
-                    ),
-                },
-            )
+        return render_view(result=result, action_result=action_result)
 
     @app.post("/rerank-jobs/new", response_class=HTMLResponse)
     async def build_rerank_jobs_submit(request: Request) -> HTMLResponse:
@@ -1361,6 +1237,26 @@ def create_app(
         jobs_file = str(form.get("jobs_file") or "").strip()
         top_n_raw = str(form.get("top_n") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
+        page_title = "Rerank Jobs"
+
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
+            return render(
+                request,
+                "rerank_jobs.html",
+                {
+                    "page_title": page_title,
+                    "view": build_rerank_jobs_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        top_n=top_n_raw or None,
+                        output_path=output_path or None,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         field_errors = collect_required_field_errors(
             {
@@ -1377,70 +1273,26 @@ def create_app(
             ],
         )
         if field_errors:
-            return render(
-                request,
-                "rerank_jobs.html",
-                {
-                    "page_title": "Rerank Jobs",
-                    "view": build_rerank_jobs_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        top_n=top_n_raw or None,
-                        output_path=output_path or None,
-                        error=summarize_field_errors(
-                            field_errors,
-                            fallback="Please fix the highlighted fields and try again.",
-                        ),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=summarize_field_errors(
+                    field_errors,
+                    fallback="Please fix the highlighted fields and try again.",
+                ),
+                field_errors=field_errors,
             )
 
-        try:
-            top_n = int(top_n_raw)
-        except ValueError:
-            field_errors = {"top_n": "Top count must be a whole number."}
-            return render(
-                request,
-                "rerank_jobs.html",
-                {
-                    "page_title": "Rerank Jobs",
-                    "view": build_rerank_jobs_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        top_n=top_n_raw or None,
-                        output_path=output_path or None,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
+        top_n, top_n_error = parse_optional_positive_int(
+            top_n_raw,
+            invalid_message="Top count must be a whole number.",
+            minimum_message="Top count must be at least 1.",
+        )
+        if top_n_error:
+            field_errors = {"top_n": top_n_error}
+            return render_view(
+                error=summarize_field_errors(field_errors),
+                field_errors=field_errors,
             )
-        if top_n < 1:
-            field_errors = {"top_n": "Top count must be at least 1."}
-            return render(
-                request,
-                "rerank_jobs.html",
-                {
-                    "page_title": "Rerank Jobs",
-                    "view": build_rerank_jobs_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        top_n=top_n_raw or None,
-                        output_path=output_path or None,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
-            )
+        assert top_n is not None
 
         try:
             result = run_rerank_jobs_build(
@@ -1453,42 +1305,12 @@ def create_app(
                 output_path=output_path,
             )
         except (ValueError, OfferQuestError) as exc:
-            return render(
-                request,
-                "rerank_jobs.html",
-                {
-                    "page_title": "Rerank Jobs",
-                    "view": build_rerank_jobs_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        cv_path=cv_path,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file,
-                        top_n=top_n_raw,
-                        output_path=output_path,
-                        error=str(exc),
-                        field_errors=map_common_form_error(str(exc)),
-                    ),
-                },
+            return render_view(
+                error=str(exc),
+                field_errors=map_common_form_error(str(exc)),
             )
 
-        return render(
-            request,
-            "rerank_jobs.html",
-            {
-                "page_title": "Rerank Jobs",
-                "view": build_rerank_jobs_form_view(
-                    project_state,
-                    ranking_file=ranking_file,
-                    cv_path=cv_path,
-                    base_cover_letter_path=base_cover_letter_path,
-                    jobs_file=jobs_file,
-                    top_n=top_n_raw,
-                    output_path=output_path,
-                    result=result,
-                ),
-            },
-        )
+        return render_view(result=result)
 
     @app.post("/cv-tailoring/new", response_class=HTMLResponse)
     async def build_resume_tailoring_submit(request: Request) -> HTMLResponse:
@@ -1499,6 +1321,26 @@ def create_app(
         base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
         jobs_file = str(form.get("jobs_file") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
+        page_title = "Tailor CV"
+
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
+            return render(
+                request,
+                "tailor_cv.html",
+                {
+                    "page_title": page_title,
+                    "view": build_resume_tailoring_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         field_errors = collect_required_field_errors(
             {
@@ -1515,26 +1357,12 @@ def create_app(
             ],
         )
         if field_errors:
-            return render(
-                request,
-                "tailor_cv.html",
-                {
-                    "page_title": "Tailor CV",
-                    "view": build_resume_tailoring_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        output_path=output_path or None,
-                        error=summarize_field_errors(
-                            field_errors,
-                            fallback="Please fix the highlighted fields and try again.",
-                        ),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=summarize_field_errors(
+                    field_errors,
+                    fallback="Please fix the highlighted fields and try again.",
+                ),
+                field_errors=field_errors,
             )
 
         try:
@@ -1547,42 +1375,12 @@ def create_app(
                 output_path=output_path,
             )
         except (ValueError, OfferQuestError) as exc:
-            return render(
-                request,
-                "tailor_cv.html",
-                {
-                    "page_title": "Tailor CV",
-                    "view": build_resume_tailoring_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file,
-                        output_path=output_path,
-                        error=str(exc),
-                        field_errors=map_common_form_error(str(exc)),
-                    ),
-                },
+            return render_view(
+                error=str(exc),
+                field_errors=map_common_form_error(str(exc)),
             )
 
-        return render(
-            request,
-            "tailor_cv.html",
-            {
-                "page_title": "Tailor CV",
-                "view": build_resume_tailoring_form_view(
-                    project_state,
-                    ranking_file=ranking_file,
-                    job_id=job_id,
-                    cv_path=cv_path,
-                    base_cover_letter_path=base_cover_letter_path,
-                    jobs_file=jobs_file,
-                    output_path=output_path,
-                    result=result,
-                ),
-            },
-        )
+        return render_view(result=result)
 
     @app.post("/cv-tailoring/draft/new", response_class=HTMLResponse)
     async def build_resume_tailored_draft_submit(request: Request) -> HTMLResponse:
@@ -1595,6 +1393,28 @@ def create_app(
         output_path = str(form.get("output_path") or "").strip()
         export_docx = bool(form.get("export_docx"))
         docx_output_path = str(form.get("docx_output_path") or "").strip() or None
+        page_title = "Tailored CV Draft"
+
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
+            return render(
+                request,
+                "tailor_cv_draft.html",
+                {
+                    "page_title": page_title,
+                    "view": build_resume_tailored_draft_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        export_docx=export_docx,
+                        docx_output_path=docx_output_path,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         field_errors = collect_required_field_errors(
             {
@@ -1611,28 +1431,12 @@ def create_app(
             ],
         )
         if field_errors:
-            return render(
-                request,
-                "tailor_cv_draft.html",
-                {
-                    "page_title": "Tailored CV Draft",
-                    "view": build_resume_tailored_draft_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        output_path=output_path or None,
-                        export_docx=export_docx,
-                        docx_output_path=docx_output_path,
-                        error=summarize_field_errors(
-                            field_errors,
-                            fallback="Please fix the highlighted fields and try again.",
-                        ),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=summarize_field_errors(
+                    field_errors,
+                    fallback="Please fix the highlighted fields and try again.",
+                ),
+                field_errors=field_errors,
             )
 
         try:
@@ -1650,46 +1454,12 @@ def create_app(
             field_errors = map_common_form_error(str(exc))
             if str(exc).startswith("DOCX output path"):
                 field_errors = {"docx_output_path": str(exc)}
-            return render(
-                request,
-                "tailor_cv_draft.html",
-                {
-                    "page_title": "Tailored CV Draft",
-                    "view": build_resume_tailored_draft_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file,
-                        output_path=output_path,
-                        export_docx=export_docx,
-                        docx_output_path=docx_output_path,
-                        error=str(exc),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=str(exc),
+                field_errors=field_errors,
             )
 
-        return render(
-            request,
-            "tailor_cv_draft.html",
-            {
-                "page_title": "Tailored CV Draft",
-                "view": build_resume_tailored_draft_form_view(
-                    project_state,
-                    ranking_file=ranking_file,
-                    job_id=job_id,
-                    cv_path=cv_path,
-                    base_cover_letter_path=base_cover_letter_path,
-                    jobs_file=jobs_file,
-                    output_path=output_path,
-                    export_docx=export_docx,
-                    docx_output_path=docx_output_path,
-                    result=result,
-                ),
-            },
-        )
+        return render_view(result=result)
 
     @app.post("/cover-letters/new", response_class=HTMLResponse)
     async def build_cover_letter_submit(request: Request) -> HTMLResponse:
@@ -1704,6 +1474,30 @@ def create_app(
         llm_model = str(form.get("llm_model") or "").strip() or None
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
+        page_title = "Generate Cover Letter"
+
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
+            return render(
+                request,
+                "build_cover_letter.html",
+                {
+                    "page_title": page_title,
+                    "view": build_cover_letter_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        draft_mode=draft_mode,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         field_errors = collect_required_field_errors(
             {
@@ -1720,82 +1514,24 @@ def create_app(
             ],
         )
         if field_errors:
-            return render(
-                request,
-                "build_cover_letter.html",
-                {
-                    "page_title": "Generate Cover Letter",
-                    "view": build_cover_letter_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        draft_mode=draft_mode,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        output_path=output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=summarize_field_errors(
-                            field_errors,
-                            fallback="Please fix the highlighted fields and try again.",
-                        ),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=summarize_field_errors(
+                    field_errors,
+                    fallback="Please fix the highlighted fields and try again.",
+                ),
+                field_errors=field_errors,
             )
 
-        try:
-            llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
-        except ValueError:
-            llm_timeout_seconds = None
-            field_errors = {"llm_timeout_seconds": "LLM timeout must be a whole number of seconds."}
-            return render(
-                request,
-                "build_cover_letter.html",
-                {
-                    "page_title": "Generate Cover Letter",
-                    "view": build_cover_letter_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        draft_mode=draft_mode,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        output_path=output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
-            )
-        if llm_timeout_seconds is not None and llm_timeout_seconds < 1:
-            field_errors = {"llm_timeout_seconds": "LLM timeout must be at least 1 second."}
-            return render(
-                request,
-                "build_cover_letter.html",
-                {
-                    "page_title": "Generate Cover Letter",
-                    "view": build_cover_letter_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        draft_mode=draft_mode,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        output_path=output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
+        llm_timeout_seconds, llm_timeout_error = parse_optional_positive_int(
+            llm_timeout_seconds_raw,
+            invalid_message="LLM timeout must be a whole number of seconds.",
+            minimum_message="LLM timeout must be at least 1 second.",
+        )
+        if llm_timeout_error:
+            field_errors = {"llm_timeout_seconds": llm_timeout_error}
+            return render_view(
+                error=summarize_field_errors(field_errors),
+                field_errors=field_errors,
             )
 
         try:
@@ -1812,54 +1548,16 @@ def create_app(
                 llm_timeout_seconds=llm_timeout_seconds,
             )
         except (ValueError, OfferQuestError) as exc:
-            return render(
-                request,
-                "build_cover_letter.html",
-                {
-                    "page_title": "Generate Cover Letter",
-                    "view": build_cover_letter_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        draft_mode=draft_mode,
-                        cv_path=cv_path,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file,
-                        output_path=output_path,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=str(exc),
-                        field_errors=(
-                            {"llm_timeout_seconds": str(exc)}
-                            if "timeout" in str(exc).lower()
-                            else map_common_form_error(str(exc))
-                        ),
-                    ),
-                },
+            return render_view(
+                error=str(exc),
+                field_errors=(
+                    {"llm_timeout_seconds": str(exc)}
+                    if "timeout" in str(exc).lower()
+                    else map_common_form_error(str(exc))
+                ),
             )
 
-        return render(
-            request,
-            "build_cover_letter.html",
-            {
-                "page_title": "Generate Cover Letter",
-                "view": build_cover_letter_form_view(
-                    project_state,
-                    ranking_file=ranking_file,
-                    job_id=job_id,
-                    draft_mode=draft_mode,
-                    cv_path=cv_path,
-                    base_cover_letter_path=base_cover_letter_path,
-                    jobs_file=jobs_file,
-                    output_path=output_path,
-                    llm_model=llm_model,
-                    llm_base_url=llm_base_url,
-                    llm_timeout_seconds=llm_timeout_seconds_raw,
-                    result=result,
-                ),
-            },
-        )
+        return render_view(result=result)
 
     @app.post("/cover-letters/compare", response_class=HTMLResponse)
     async def compare_cover_letters_submit(request: Request) -> HTMLResponse:
@@ -1874,6 +1572,30 @@ def create_app(
         llm_model = str(form.get("llm_model") or "").strip() or None
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
+        page_title = "Compare Drafts"
+
+        def render_view(**view_kwargs: Any) -> HTMLResponse:
+            return render(
+                request,
+                "compare_cover_letters.html",
+                {
+                    "page_title": page_title,
+                    "view": build_cover_letter_compare_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        rule_based_output_path=rule_based_output_path or None,
+                        llm_output_path=llm_output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        **view_kwargs,
+                    ),
+                },
+            )
 
         field_errors = collect_required_field_errors(
             {
@@ -1892,81 +1614,24 @@ def create_app(
             ],
         )
         if field_errors:
-            return render(
-                request,
-                "compare_cover_letters.html",
-                {
-                    "page_title": "Compare Drafts",
-                    "view": build_cover_letter_compare_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        rule_based_output_path=rule_based_output_path or None,
-                        llm_output_path=llm_output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=summarize_field_errors(
-                            field_errors,
-                            fallback="Please fix the highlighted fields and try again.",
-                        ),
-                        field_errors=field_errors,
-                    ),
-                },
+            return render_view(
+                error=summarize_field_errors(
+                    field_errors,
+                    fallback="Please fix the highlighted fields and try again.",
+                ),
+                field_errors=field_errors,
             )
 
-        try:
-            llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
-        except ValueError:
-            field_errors = {"llm_timeout_seconds": "LLM timeout must be a whole number of seconds."}
-            return render(
-                request,
-                "compare_cover_letters.html",
-                {
-                    "page_title": "Compare Drafts",
-                    "view": build_cover_letter_compare_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        rule_based_output_path=rule_based_output_path or None,
-                        llm_output_path=llm_output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
-            )
-        if llm_timeout_seconds is not None and llm_timeout_seconds < 1:
-            field_errors = {"llm_timeout_seconds": "LLM timeout must be at least 1 second."}
-            return render(
-                request,
-                "compare_cover_letters.html",
-                {
-                    "page_title": "Compare Drafts",
-                    "view": build_cover_letter_compare_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        rule_based_output_path=rule_based_output_path or None,
-                        llm_output_path=llm_output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=summarize_field_errors(field_errors),
-                        field_errors=field_errors,
-                    ),
-                },
+        llm_timeout_seconds, llm_timeout_error = parse_optional_positive_int(
+            llm_timeout_seconds_raw,
+            invalid_message="LLM timeout must be a whole number of seconds.",
+            minimum_message="LLM timeout must be at least 1 second.",
+        )
+        if llm_timeout_error:
+            field_errors = {"llm_timeout_seconds": llm_timeout_error}
+            return render_view(
+                error=summarize_field_errors(field_errors),
+                field_errors=field_errors,
             )
 
         try:
@@ -1983,54 +1648,16 @@ def create_app(
                 llm_timeout_seconds=llm_timeout_seconds,
             )
         except (ValueError, OfferQuestError) as exc:
-            return render(
-                request,
-                "compare_cover_letters.html",
-                {
-                    "page_title": "Compare Drafts",
-                    "view": build_cover_letter_compare_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file,
-                        rule_based_output_path=rule_based_output_path,
-                        llm_output_path=llm_output_path,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=str(exc),
-                        field_errors=(
-                            {"llm_timeout_seconds": str(exc)}
-                            if "timeout" in str(exc).lower()
-                            else map_common_form_error(str(exc))
-                        ),
-                    ),
-                },
+            return render_view(
+                error=str(exc),
+                field_errors=(
+                    {"llm_timeout_seconds": str(exc)}
+                    if "timeout" in str(exc).lower()
+                    else map_common_form_error(str(exc))
+                ),
             )
 
-        return render(
-            request,
-            "compare_cover_letters.html",
-            {
-                "page_title": "Compare Drafts",
-                "view": build_cover_letter_compare_view(
-                    project_state,
-                    ranking_file=ranking_file,
-                    job_id=job_id,
-                    cv_path=cv_path,
-                    base_cover_letter_path=base_cover_letter_path,
-                    jobs_file=jobs_file,
-                    rule_based_output_path=rule_based_output_path,
-                    llm_output_path=llm_output_path,
-                    llm_model=llm_model,
-                    llm_base_url=llm_base_url,
-                    llm_timeout_seconds=llm_timeout_seconds_raw,
-                    result=result,
-                ),
-            },
-        )
+        return render_view(result=result)
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def run_detail(request: Request, run_id: str) -> HTMLResponse:

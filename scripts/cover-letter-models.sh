@@ -13,6 +13,7 @@ COVER_LETTER_MODELS_RECOMMENDED=(
 # Stretch models may work, but are more likely to spill into system RAM and
 # become noticeably slower on a laptop-class 12 GB GPU.
 COVER_LETTER_MODELS_STRETCH=(
+  "gpt-oss:20b"
   "mistral-small"
 )
 

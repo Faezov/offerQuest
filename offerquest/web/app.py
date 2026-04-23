@@ -1,7 +1,11 @@
 import argparse
+import copy
 import logging
 import os
 import socket
+import threading
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +33,9 @@ from ..workbench import (
     run_job_source_delete,
     run_job_source_save,
     run_job_source_toggle,
+    run_local_ollama_runtime_install,
     run_ollama_models_pull,
+    run_ollama_server_restart,
     run_profile_build,
     run_refresh_jobs_build,
     run_rerank_jobs_build,
@@ -126,6 +132,69 @@ def safe_request_url_for(
         return fallback
 
 
+class OllamaJobStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._jobs: dict[str, dict[str, Any]] = {}
+
+    def create(self, *, intent: str, base_url: str, custom_model: str | None) -> str:
+        job_id = uuid.uuid4().hex
+        now = datetime.now(UTC).isoformat()
+        with self._lock:
+            self._jobs[job_id] = {
+                "id": job_id,
+                "intent": intent,
+                "base_url": base_url,
+                "custom_model": custom_model,
+                "status": "queued",
+                "progress": 0,
+                "message": "Queued",
+                "detail": "Waiting to start.",
+                "error": None,
+                "action_result": None,
+                "created_at": now,
+                "updated_at": now,
+            }
+            self._prune_locked()
+        return job_id
+
+    def update(self, job_id: str, **updates: Any) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            if "progress" in updates:
+                updates["progress"] = normalize_progress(updates["progress"])
+            job.update(updates)
+            job["updated_at"] = datetime.now(UTC).isoformat()
+
+    def get(self, job_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return copy.deepcopy(job) if job is not None else None
+
+    def _prune_locked(self, *, keep_latest: int = 30) -> None:
+        if len(self._jobs) <= keep_latest:
+            return
+        sorted_jobs = sorted(
+            self._jobs.values(),
+            key=lambda job: str(job.get("created_at") or ""),
+            reverse=True,
+        )
+        keep_ids = {str(job["id"]) for job in sorted_jobs[:keep_latest]}
+        for job_id in list(self._jobs):
+            if job_id not in keep_ids:
+                del self._jobs[job_id]
+
+
+def normalize_progress(value: Any) -> int:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, int(round(parsed))))
+
+
 def create_app(
     *,
     workspace_root: str | Path | None = None,
@@ -135,6 +204,7 @@ def create_app(
         from fastapi import FastAPI, HTTPException, Request
         from fastapi.responses import FileResponse
         from fastapi.responses import HTMLResponse
+        from fastapi.responses import JSONResponse
         from fastapi.staticfiles import StaticFiles
         from fastapi.templating import Jinja2Templates
     except ImportError as exc:
@@ -158,6 +228,7 @@ def create_app(
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     templates = Jinja2Templates(directory=str(templates_dir))
     app.state.project_state = project_state
+    app.state.ollama_jobs = OllamaJobStore()
 
     def render(request: Request, template_name: str, context: dict[str, Any]) -> HTMLResponse:
         base_context = {
@@ -174,6 +245,158 @@ def create_app(
             template_name,
             {**base_context, **context},
         )
+
+    def resolve_ollama_action_models(
+        *,
+        intent: str,
+        base_url: str | None,
+        custom_model: str | None,
+    ) -> list[str]:
+        if intent == "pull_recommended":
+            return list(build_ollama_setup_view(project_state, base_url=base_url)["recommended_models"])
+        if intent == "pull_missing_recommended":
+            current_view = build_ollama_setup_view(
+                project_state,
+                base_url=base_url,
+                custom_model=custom_model,
+            )
+            models = list(current_view["missing_recommended_models"])
+            if not models:
+                raise ValueError("All recommended models are already installed.")
+            return models
+        if intent == "pull_custom":
+            if not custom_model:
+                raise ValueError("Custom model name is required.")
+            return [custom_model]
+        raise ValueError("Unknown Ollama setup action.")
+
+    def build_models_action_result(
+        *,
+        title: str,
+        pulled_models: tuple[str, ...],
+        installed_count: int,
+    ) -> dict[str, Any]:
+        return {
+            "title": title,
+            "details": [
+                f"Pulled models: {', '.join(pulled_models)}",
+                f"Installed models now: {installed_count}",
+            ],
+        }
+
+    def update_ollama_job_from_progress(job_id: str, payload: dict[str, Any]) -> None:
+        updates: dict[str, Any] = {}
+        if payload.get("progress") is not None:
+            updates["progress"] = payload.get("progress")
+        if payload.get("message") or payload.get("status"):
+            updates["message"] = payload.get("message") or payload.get("status")
+        if payload.get("detail"):
+            updates["detail"] = payload.get("detail")
+        elif payload.get("status"):
+            updates["detail"] = payload.get("status")
+        if payload.get("completed_bytes") is not None:
+            updates["completed_bytes"] = payload.get("completed_bytes")
+        if payload.get("total_bytes") is not None:
+            updates["total_bytes"] = payload.get("total_bytes")
+        if updates:
+            app.state.ollama_jobs.update(job_id, **updates)
+
+    def run_ollama_setup_progress_job(
+        *,
+        job_id: str,
+        intent: str,
+        base_url: str,
+        custom_model: str | None,
+    ) -> None:
+        app.state.ollama_jobs.update(
+            job_id,
+            status="running",
+            progress=1,
+            message="Starting Ollama action",
+            detail="Preparing the requested action.",
+        )
+        try:
+            if intent in {"pull_recommended", "pull_missing_recommended", "pull_custom"}:
+                models = resolve_ollama_action_models(
+                    intent=intent,
+                    base_url=base_url,
+                    custom_model=custom_model,
+                )
+                result = run_ollama_models_pull(
+                    base_url=base_url,
+                    models=models,
+                    progress_callback=lambda payload: update_ollama_job_from_progress(job_id, payload),
+                )
+                title = {
+                    "pull_recommended": "Models pulled",
+                    "pull_missing_recommended": "Missing recommended models pulled",
+                    "pull_custom": "Custom model pulled",
+                }[intent]
+                action_result = build_models_action_result(
+                    title=title,
+                    pulled_models=result.pulled_models,
+                    installed_count=len(result.ollama_status.get("models", [])),
+                )
+            elif intent == "download_runtime":
+                install_result = run_local_ollama_runtime_install(
+                    progress_callback=lambda payload: update_ollama_job_from_progress(job_id, payload),
+                )
+                action_result = {
+                    "title": "Local Ollama runtime downloaded",
+                    "details": [
+                        f"Command source: {install_result.get('command_source') or 'unknown'}",
+                        f"Runtime path: {install_result.get('local_runtime_path') or 'not detected'}",
+                    ],
+                }
+            elif intent == "restart_server":
+                app.state.ollama_jobs.update(
+                    job_id,
+                    progress=20,
+                    message="Starting managed Ollama server",
+                    detail="Waiting for the server to become reachable.",
+                )
+                restart_result = run_ollama_server_restart(base_url=base_url)
+                action_result = {
+                    "title": (
+                        "Managed Ollama server restarted"
+                        if restart_result.get("restarted_existing")
+                        else "Managed Ollama server started"
+                    ),
+                    "details": [
+                        f"Base URL: {restart_result.get('base_url')}",
+                        f"Managed PID: {restart_result.get('pid')}",
+                    ],
+                }
+            else:
+                raise ValueError("Unknown Ollama setup action.")
+        except (ValueError, OfferQuestError) as exc:
+            app.state.ollama_jobs.update(
+                job_id,
+                status="failed",
+                progress=100,
+                message="Ollama action failed",
+                detail=str(exc),
+                error=str(exc),
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard for background thread
+            logger.exception("Unexpected Ollama setup job failure")
+            app.state.ollama_jobs.update(
+                job_id,
+                status="failed",
+                progress=100,
+                message="Ollama action failed",
+                detail=str(exc),
+                error=str(exc),
+            )
+        else:
+            app.state.ollama_jobs.update(
+                job_id,
+                status="succeeded",
+                progress=100,
+                message=action_result["title"],
+                detail=" ".join(action_result["details"]),
+                action_result=action_result,
+            )
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> HTMLResponse:
@@ -250,6 +473,57 @@ def create_app(
                 ),
             },
         )
+
+    @app.post("/ollama/jobs")
+    async def ollama_setup_job_submit(request: Request) -> JSONResponse:
+        form = await request.form()
+        intent = str(form.get("intent") or "refresh_status").strip()
+        base_url = str(form.get("base_url") or "").strip() or DEFAULT_OLLAMA_BASE_URL
+        custom_model = str(form.get("custom_model") or "").strip() or None
+
+        if intent == "refresh_status":
+            return JSONResponse(
+                {"error": "Refresh status does not run as a background job."},
+                status_code=400,
+            )
+        if intent not in {
+            "download_runtime",
+            "restart_server",
+            "pull_recommended",
+            "pull_missing_recommended",
+            "pull_custom",
+        }:
+            return JSONResponse({"error": "Unknown Ollama setup action."}, status_code=400)
+
+        job_id = app.state.ollama_jobs.create(
+            intent=intent,
+            base_url=base_url,
+            custom_model=custom_model,
+        )
+        thread = threading.Thread(
+            target=run_ollama_setup_progress_job,
+            kwargs={
+                "job_id": job_id,
+                "intent": intent,
+                "base_url": base_url,
+                "custom_model": custom_model,
+            },
+            daemon=True,
+        )
+        thread.start()
+        return JSONResponse(
+            {
+                "job_id": job_id,
+                "status_url": str(request.url_for("ollama_setup_job_status", job_id=job_id)),
+            }
+        )
+
+    @app.get("/ollama/jobs/{job_id}")
+    async def ollama_setup_job_status(job_id: str) -> JSONResponse:
+        job = app.state.ollama_jobs.get(job_id)
+        if job is None:
+            return JSONResponse({"error": "Ollama setup job was not found."}, status_code=404)
+        return JSONResponse(job)
 
     @app.get("/build-profile", response_class=HTMLResponse)
     async def build_profile_page(request: Request) -> HTMLResponse:
@@ -667,8 +941,20 @@ def create_app(
             )
 
         try:
+            action_result: dict[str, Any] | None = None
             if intent == "pull_recommended":
                 models = list(build_ollama_setup_view(project_state, base_url=base_url)["recommended_models"])
+                result = run_ollama_models_pull(
+                    base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
+                    models=models,
+                )
+                action_result = {
+                    "title": "Models pulled",
+                    "details": [
+                        f"Pulled models: {', '.join(result.pulled_models)}",
+                        f"Installed models now: {len(result.ollama_status.get('models', []))}",
+                    ],
+                }
             elif intent == "pull_missing_recommended":
                 current_view = build_ollama_setup_view(
                     project_state,
@@ -678,17 +964,60 @@ def create_app(
                 models = list(current_view["missing_recommended_models"])
                 if not models:
                     raise ValueError("All recommended models are already installed.")
+                result = run_ollama_models_pull(
+                    base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
+                    models=models,
+                )
+                action_result = {
+                    "title": "Missing recommended models pulled",
+                    "details": [
+                        f"Pulled models: {', '.join(result.pulled_models)}",
+                        f"Installed models now: {len(result.ollama_status.get('models', []))}",
+                    ],
+                }
             elif intent == "pull_custom":
                 if not custom_model:
                     raise ValueError("Custom model name is required.")
                 models = [custom_model]
+                result = run_ollama_models_pull(
+                    base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
+                    models=models,
+                )
+                action_result = {
+                    "title": "Custom model pulled",
+                    "details": [
+                        f"Pulled model: {custom_model}",
+                        f"Installed models now: {len(result.ollama_status.get('models', []))}",
+                    ],
+                }
+            elif intent == "download_runtime":
+                install_result = run_local_ollama_runtime_install()
+                result = None
+                action_result = {
+                    "title": "Local Ollama runtime downloaded",
+                    "details": [
+                        f"Command source: {install_result.get('command_source') or 'unknown'}",
+                        f"Runtime path: {install_result.get('local_runtime_path') or 'not detected'}",
+                    ],
+                }
+            elif intent == "restart_server":
+                restart_result = run_ollama_server_restart(
+                    base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
+                )
+                result = None
+                action_result = {
+                    "title": (
+                        "Managed Ollama server restarted"
+                        if restart_result.get("restarted_existing")
+                        else "Managed Ollama server started"
+                    ),
+                    "details": [
+                        f"Base URL: {restart_result.get('base_url')}",
+                        f"Managed PID: {restart_result.get('pid')}",
+                    ],
+                }
             else:
                 raise ValueError("Unknown Ollama setup action.")
-
-            result = run_ollama_models_pull(
-                base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
-                models=models,
-            )
         except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
@@ -709,14 +1038,15 @@ def create_app(
             "ollama_setup.html",
             {
                 "page_title": "Ollama Setup",
-                "view": build_ollama_setup_view(
-                    project_state,
-                    base_url=base_url,
-                    custom_model=custom_model,
-                    result=result,
-                ),
-            },
-        )
+                    "view": build_ollama_setup_view(
+                        project_state,
+                        base_url=base_url,
+                        custom_model=custom_model,
+                        result=result,
+                        action_result=action_result,
+                    ),
+                },
+            )
 
     @app.post("/rerank-jobs/new", response_class=HTMLResponse)
     async def build_rerank_jobs_submit(request: Request) -> HTMLResponse:

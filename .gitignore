@@ -5,6 +5,7 @@ __pycache__/
 extracted/
 outputs/
 .ollama-home/
+.tools/
 .tools/ollama/
 .tools/ollama-partial/
 .tools/ollama-linux-amd64.tar.zst

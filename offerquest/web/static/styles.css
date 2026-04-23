@@ -399,6 +399,94 @@ h1 {
   background: rgba(254, 242, 242, 0.82);
 }
 
+.working-callout {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(180, 83, 9, 0.35);
+  background: linear-gradient(135deg, rgba(255, 251, 235, 0.92), rgba(240, 253, 250, 0.86));
+  box-shadow: 0 14px 32px rgba(180, 83, 9, 0.12);
+}
+
+.working-callout[hidden] {
+  display: none;
+}
+
+.working-callout--error {
+  border-color: rgba(185, 28, 28, 0.35);
+  background: rgba(254, 242, 242, 0.92);
+}
+
+.working-callout p {
+  margin: 0;
+}
+
+.working-callout__body {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.working-callout__title {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.working-callout__spinner {
+  flex: 0 0 auto;
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 3px solid rgba(15, 118, 110, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.working-callout--error .working-callout__spinner {
+  animation: none;
+  border-color: rgba(185, 28, 28, 0.22);
+  border-top-color: #b91c1c;
+}
+
+.progress-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.progress-row__percent {
+  flex: 0 0 auto;
+  min-width: 3.2rem;
+  color: var(--accent);
+}
+
+.progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 0.7rem;
+  width: min(100%, 34rem);
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.12);
+}
+
+.progress-track__bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #14b8a6, var(--warm));
+  transition: width 0.35s ease;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .advice-stack {
   display: grid;
   gap: 0.9rem;

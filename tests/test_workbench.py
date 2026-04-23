@@ -235,41 +235,78 @@ class WorkbenchTests(unittest.TestCase):
                     "missing_recommended_models": ["gemma3:12b", "qwen3:14b"],
                 },
             ):
-                view = build_ollama_setup_view(state)
+                with patch(
+                    "offerquest.workbench.detect_gpu_environment",
+                    return_value={"summary": "NVIDIA GPU detected.", "detail": "Ready", "devices": []},
+                ):
+                    with patch(
+                        "offerquest.workbench.get_managed_ollama_server_state",
+                        return_value={"running": False, "pid": None, "log_path": "log", "pid_path": "pid"},
+                    ):
+                        view = build_ollama_setup_view(state)
 
         self.assertEqual(view["status_label"], "Ready")
         self.assertEqual(view["installed_models"], ["qwen3:8b"])
         self.assertTrue(view["can_pull_models"])
 
-    def test_run_ollama_models_pull_uses_cli_and_refreshes_status(self) -> None:
+    def test_run_ollama_models_pull_uses_streaming_api_and_refreshes_status(self) -> None:
         with patch(
             "offerquest.workbench.get_ollama_status",
             side_effect=[
                 {
                     "reachable": True,
-                    "command_available": True,
+                    "command_available": False,
                     "has_models": False,
                     "models": [],
                     "missing_recommended_models": ["qwen3:8b"],
                 },
                 {
                     "reachable": True,
-                    "command_available": True,
+                    "command_available": False,
                     "has_models": True,
                     "models": [{"name": "qwen3:8b"}],
                     "missing_recommended_models": [],
                 },
             ],
         ):
-            with patch("offerquest.workbench.run_ollama_cli") as cli_mock:
+            progress_events: list[dict[str, object]] = []
+            def fake_pull_ollama_model(**kwargs):
+                progress_callback = kwargs["progress_callback"]
+                progress_callback(
+                    {
+                        "status": "pulling manifest",
+                    }
+                )
+                progress_callback(
+                    {
+                        "status": "downloading",
+                        "digest": "sha256:layer-1",
+                        "completed": 50,
+                        "total": 100,
+                    }
+                )
+                progress_callback(
+                    {
+                        "status": "downloading",
+                        "digest": "sha256:layer-1",
+                        "completed": 100,
+                        "total": 100,
+                    }
+                )
+
+            with patch("offerquest.workbench.pull_ollama_model", side_effect=fake_pull_ollama_model) as pull_mock:
                 result = run_ollama_models_pull(
                     base_url="http://localhost:11434",
                     models=["qwen3:8b"],
+                    progress_callback=progress_events.append,
                 )
 
         self.assertEqual(result.pulled_models, ("qwen3:8b",))
         self.assertEqual(result.ollama_status["models"][0]["name"], "qwen3:8b")
-        self.assertEqual(cli_mock.call_args.args, (["pull", "qwen3:8b"],))
+        self.assertEqual(pull_mock.call_args.kwargs["model"], "qwen3:8b")
+        self.assertEqual(pull_mock.call_args.kwargs["base_url"], "http://localhost:11434")
+        self.assertIn("50 B of 100 B", progress_events[1]["detail"])
+        self.assertEqual(progress_events[-1]["progress"], 100)
 
     def test_run_job_source_save_creates_source_and_syncs_merge_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

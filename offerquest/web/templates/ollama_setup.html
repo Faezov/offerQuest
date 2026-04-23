@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 
 {% block content %}
+  {% set action_result = view.get("action_result") %}
+  {% set managed_server = view.get("managed_server", {}) %}
+  {% set hardware_status = view.get(
+    "hardware_status",
+    {
+      "summary": "Hardware detection will appear after the workbench reloads.",
+      "detail": "Restart the OfferQuest workbench once so the GPU-aware Ollama setup view is fully loaded.",
+      "devices": [],
+    },
+  ) %}
+  {% set recommended_model_cards = view.get("recommended_model_cards", []) %}
+  {% set stretch_model_cards = view.get("stretch_model_cards", []) %}
+  {% set lightweight_model_cards = view.get("lightweight_model_cards", []) %}
+  {% set has_local_runtime = view.get("has_local_runtime", false) %}
+  {% set can_install_runtime = view.get("can_install_runtime", false) %}
+  {% set can_restart_server = view.get("can_restart_server", false) %}
+  {% set ollama_actions_loaded = view.get("can_install_runtime") is not none or view.get("can_restart_server") is not none %}
+
   <section class="panel-grid panel-grid--metrics">
     <article class="metric-card">
       <p class="metric-card__label">Status</p>
@@ -29,12 +47,33 @@
         </div>
       {% endif %}
 
-      {% if view.result %}
+      {% if action_result %}
+        <div class="callout">
+          <p><strong>{{ action_result.title }}</strong></p>
+          {% for detail in action_result.details %}
+            <p>{{ detail }}</p>
+          {% endfor %}
+        </div>
+      {% elif view.result %}
         <div class="callout">
           <p><strong>Pulled models:</strong> {{ view.result.pulled_models | join(", ") }}</p>
           <p><strong>Installed models now:</strong> {{ view.result.ollama_status.models | length }}</p>
         </div>
       {% endif %}
+
+      <div id="ollama-progress" class="working-callout" role="status" aria-live="polite" data-progress-endpoint="{{ request.url_for('ollama_setup_job_submit') }}" hidden>
+        <div class="working-callout__spinner" aria-hidden="true"></div>
+        <div class="working-callout__body">
+          <p class="working-callout__title" data-progress-title>Preparing Ollama action...</p>
+          <p data-progress-detail>This can take a little while. Keep this tab open until the page updates.</p>
+          <div class="progress-row">
+            <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Ollama action queued">
+              <span class="progress-track__bar" data-progress-bar></span>
+            </div>
+            <strong class="progress-row__percent" data-progress-percent>0%</strong>
+          </div>
+        </div>
+      </div>
 
       <form method="get" class="form-stack">
         <label class="field">
@@ -77,14 +116,51 @@
     <article class="panel">
       <div class="panel__header">
         <h2>Local Commands</h2>
-        <p>OfferQuest can manage model pulls for you from this page, but starting the server still works best from the terminal.</p>
+        <p>OfferQuest can now download a local Ollama runtime and manage its own background server for this workspace.</p>
+      </div>
+
+      <div class="callout">
+        <p><strong>Local runtime:</strong> {{ "Installed in this repo" if has_local_runtime else "Not installed in this repo yet" }}</p>
+        <p><strong>Managed server:</strong> {{ "Running" if managed_server.get("running") else "Stopped" }}</p>
+        {% if managed_server.get("pid") %}
+          <p><strong>Managed PID:</strong> {{ managed_server.get("pid") }}</p>
+        {% endif %}
+        <p><strong>Managed log:</strong> <code>{{ managed_server.get("log_path", "Available after restart") }}</code></p>
+      </div>
+
+      {% if not ollama_actions_loaded %}
+        <div class="callout">
+          <p><strong>Buttons are waiting for a workbench restart.</strong></p>
+          <p>The template has reloaded, but the running Python process has not loaded the new Ollama action handlers yet.</p>
+        </div>
+      {% elif not can_install_runtime %}
+        <div class="callout">
+          <p><strong>Download action unavailable.</strong></p>
+          <p>The local installer script was not detected under <code>scripts/install-ollama-local.sh</code>.</p>
+        </div>
+      {% endif %}
+
+      <div class="button-row">
+        <form method="post" class="inline-form" data-ollama-action data-loading-title="Downloading local Ollama runtime" data-loading-detail="This is a large download, roughly 2 GB. It can take several minutes depending on your connection.">
+          <input type="hidden" name="intent" value="download_runtime">
+          <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
+          <button class="primary-button" type="submit" {% if not can_install_runtime %}disabled{% endif %}>
+            {{ "Reinstall Local Ollama" if has_local_runtime else "Download Local Ollama" }}
+          </button>
+        </form>
+
+        <form method="post" class="inline-form" data-ollama-action data-loading-title="Starting managed Ollama server" data-loading-detail="OfferQuest is starting or restarting the local background server and checking when it becomes reachable.">
+          <input type="hidden" name="intent" value="restart_server">
+          <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
+          <button class="secondary-button" type="submit" {% if not can_restart_server %}disabled{% endif %}>{{ view.get("managed_server_button_label", "Start Managed Server") }}</button>
+        </form>
       </div>
 
       <div class="advice-stack">
         <div class="advice-card">
           <p class="advice-card__eyebrow">Start server</p>
           <h3><code>{{ view.serve_command }}</code></h3>
-          <p>Run this once in a terminal, then refresh this page so OfferQuest can see the server.</p>
+          <p>Terminal control is still available if you prefer to run Ollama outside the managed OfferQuest server.</p>
         </div>
 
         <div class="advice-card">
@@ -105,15 +181,49 @@
   <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
-        <h2>Recommended Models</h2>
-        <p>These are the default models OfferQuest prefers for local LLM cover-letter drafting.</p>
+        <h2>Hardware Fit</h2>
+        <p>OfferQuest checks the local machine before nudging you toward heavier local models.</p>
       </div>
 
-      <ul class="token-list">
-        {% for model_name in view.recommended_models %}
-          <li>{{ model_name }}</li>
-        {% endfor %}
-      </ul>
+      <div class="callout">
+        <p><strong>{{ hardware_status.summary }}</strong></p>
+        <p>{{ hardware_status.detail }}</p>
+      </div>
+
+      {% if hardware_status.devices %}
+        <ul class="strip-list">
+          {% for device in hardware_status.devices %}
+            <li>
+              <span>{{ device.name }}</span>
+              <strong>{{ device.vendor }}</strong>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Recommended Models</h2>
+        <p>These are the best current fits for local OfferQuest drafting on a single machine.</p>
+      </div>
+
+      {% if recommended_model_cards %}
+        <ul class="strip-list">
+          {% for model in recommended_model_cards %}
+            <li>
+              <span><strong>{{ model.name }}</strong> · {{ model.summary }}</span>
+              <strong>{{ model.size_label }} / {{ model.context_label }}</strong>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <ul class="token-list">
+          {% for model_name in view.recommended_models %}
+            <li>{{ model_name }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
 
       {% if view.missing_recommended_models %}
         <div class="callout">
@@ -126,13 +236,13 @@
       {% endif %}
 
       <div class="button-row">
-        <form method="post" class="inline-form">
+        <form method="post" class="inline-form" data-ollama-action data-loading-title="Pulling recommended models" data-loading-detail="Model pulls can be several GB. Ollama will stream the download in the server process; this page will update when the pull finishes.">
           <input type="hidden" name="intent" value="pull_recommended">
           <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
           <button class="primary-button" type="submit" {% if not view.can_pull_models %}disabled{% endif %}>Pull Recommended Models</button>
         </form>
 
-        <form method="post" class="inline-form">
+        <form method="post" class="inline-form" data-ollama-action data-loading-title="Pulling missing recommended models" data-loading-detail="Only the missing recommended models are being downloaded. Large models may take several minutes.">
           <input type="hidden" name="intent" value="pull_missing_recommended">
           <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
           <button class="secondary-button" type="submit" {% if not view.can_pull_models or not view.missing_recommended_models %}disabled{% endif %}>Pull Only Missing Recommended</button>
@@ -146,7 +256,7 @@
         <p>Use this if you want to pull something outside the recommended set.</p>
       </div>
 
-      <form method="post" class="form-stack">
+      <form method="post" class="form-stack" data-ollama-action data-loading-title="Pulling custom model" data-loading-detail="Ollama is downloading {model}. Keep this tab open until the page reports the result.">
         <input type="hidden" name="intent" value="pull_custom">
         <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
         <label class="field">
@@ -157,12 +267,41 @@
       </form>
 
       <div class="subsection">
+        <h3>Lighter Fallbacks</h3>
+        {% if lightweight_model_cards %}
+          <ul class="strip-list">
+            {% for model in lightweight_model_cards %}
+              <li>
+                <span><strong>{{ model.name }}</strong> · {{ model.summary }}</span>
+                <strong>{{ model.size_label }} / {{ model.context_label }}</strong>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="empty-state compact">
+            <p>Restart the workbench to load lighter-model recommendations for this machine.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="subsection">
         <h3>Stretch Models</h3>
-        <ul class="token-list">
-          {% for model_name in view.stretch_models %}
-            <li>{{ model_name }}</li>
-          {% endfor %}
-        </ul>
+        {% if stretch_model_cards %}
+          <ul class="strip-list">
+            {% for model in stretch_model_cards %}
+              <li>
+                <span><strong>{{ model.name }}</strong> · {{ model.summary }}</span>
+                <strong>{{ model.size_label }} / {{ model.context_label }}</strong>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <ul class="token-list">
+            {% for model_name in view.stretch_models %}
+              <li>{{ model_name }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
       </div>
     </article>
   </section>
@@ -189,4 +328,142 @@
       </div>
     {% endif %}
   </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (() => {
+      const progress = document.querySelector("#ollama-progress");
+      if (!progress) {
+        return;
+      }
+
+      const titleNode = progress.querySelector("[data-progress-title]");
+      const detailNode = progress.querySelector("[data-progress-detail]");
+      const progressBar = progress.querySelector("[data-progress-bar]");
+      const progressTrack = progress.querySelector("[role='progressbar']");
+      const progressPercent = progress.querySelector("[data-progress-percent]");
+      const progressEndpoint = progress.dataset.progressEndpoint;
+      const actionForms = document.querySelectorAll("form[data-ollama-action]");
+      const actionButtons = document.querySelectorAll("form[data-ollama-action] button[type='submit']");
+      let activePoll = null;
+
+      const setProgress = (value, message, detail) => {
+        const normalized = Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Math.round(Number(value)))) : 0;
+        if (progressBar) {
+          progressBar.style.width = `${normalized}%`;
+        }
+        if (progressTrack) {
+          progressTrack.setAttribute("aria-valuenow", String(normalized));
+          progressTrack.setAttribute("aria-valuetext", `${normalized}% complete`);
+        }
+        if (progressPercent) {
+          progressPercent.textContent = `${normalized}%`;
+        }
+        if (message) {
+          titleNode.textContent = message;
+        }
+        if (detail) {
+          detailNode.textContent = detail;
+        }
+      };
+
+      const setButtonsDisabled = (disabled) => {
+        actionButtons.forEach((button) => {
+          button.disabled = disabled;
+        });
+      };
+
+      const showError = (message) => {
+        progress.hidden = false;
+        progress.classList.remove("working-callout--active");
+        progress.classList.add("working-callout--error");
+        setProgress(100, "Ollama action failed", message);
+        setButtonsDisabled(false);
+      };
+
+      const pollJob = async (statusUrl) => {
+        try {
+          const response = await fetch(statusUrl, { headers: { "Accept": "application/json" } });
+          const job = await response.json();
+          if (!response.ok) {
+            throw new Error(job.error || "Could not read Ollama job status.");
+          }
+
+          setProgress(job.progress || 0, job.message, job.detail);
+
+          if (job.status === "succeeded") {
+            setProgress(100, job.message || "Ollama action complete", job.detail || "Refreshing setup status...");
+            window.clearTimeout(activePoll);
+            window.setTimeout(() => {
+              const url = new URL(window.location.href);
+              if (job.base_url) {
+                url.searchParams.set("base_url", job.base_url);
+              }
+              window.location.href = url.toString();
+            }, 900);
+            return;
+          }
+
+          if (job.status === "failed") {
+            showError(job.error || job.detail || "The Ollama action failed.");
+            return;
+          }
+
+          activePoll = window.setTimeout(() => pollJob(statusUrl), 750);
+        } catch (error) {
+          showError(error instanceof Error ? error.message : "Could not poll Ollama progress.");
+        }
+      };
+
+      actionForms.forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+          const submitButton = form.querySelector("button[type='submit']");
+          if (submitButton && submitButton.disabled) {
+            return;
+          }
+          if (!form.checkValidity()) {
+            return;
+          }
+          if (!progressEndpoint || !window.fetch) {
+            return;
+          }
+          event.preventDefault();
+
+          const customModel = form.querySelector("[name='custom_model']");
+          const modelName = customModel && customModel.value.trim() ? customModel.value.trim() : "the selected model";
+          const title = form.dataset.loadingTitle || "Working on Ollama setup";
+          const detail = (form.dataset.loadingDetail || "This can take a little while. Keep this tab open until the page updates.").replace("{model}", modelName);
+
+          window.clearTimeout(activePoll);
+          progress.hidden = false;
+          progress.classList.add("working-callout--active");
+          progress.classList.remove("working-callout--error");
+          setProgress(0, title, detail);
+          progress.scrollIntoView({ behavior: "smooth", block: "center" });
+          setButtonsDisabled(true);
+
+          if (submitButton) {
+            submitButton.textContent = "Working...";
+          }
+
+          try {
+            const response = await fetch(progressEndpoint, {
+              method: "POST",
+              body: new FormData(form),
+              headers: { "Accept": "application/json" },
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+              throw new Error(payload.error || "Could not start Ollama action.");
+            }
+            setProgress(1, "Ollama action queued", "Starting background job...");
+            pollJob(payload.status_url);
+          } catch (error) {
+            showError(error instanceof Error ? error.message : "Could not start Ollama action.");
+          }
+        });
+      });
+    })();
+  </script>
 {% endblock %}

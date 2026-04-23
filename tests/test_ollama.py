@@ -5,9 +5,11 @@ import unittest
 from unittest.mock import patch
 
 from offerquest.ollama import (
+    _summarize_process_output,
     build_ollama_pull_selection,
     generate_structured_response,
     get_ollama_status,
+    resolve_ollama_command,
     select_default_ollama_model,
 )
 
@@ -51,6 +53,30 @@ class OllamaTests(unittest.TestCase):
         )
 
         self.assertEqual(models, ["qwen3:8b", "gemma3:12b", "qwen3:14b"])
+
+    def test_resolve_ollama_command_requires_real_binary_behind_repo_wrapper(self) -> None:
+        with patch("offerquest.ollama.resolve_local_ollama_binary", return_value=None):
+            with patch("offerquest.ollama.shutil.which", return_value=None):
+                command = resolve_ollama_command()
+
+        self.assertIsNone(command)
+
+    def test_summarize_process_output_tails_and_redacts_signed_urls(self) -> None:
+        output = "\n".join(
+            [
+                "line 1",
+                "line 2",
+                "https://release-assets.githubusercontent.com/github-production-release-asset/123?jwt=secret",
+                "Downloaded archive failed integrity validation.",
+            ]
+        )
+
+        summary = _summarize_process_output(output, max_lines=3)
+
+        self.assertNotIn("line 1", summary)
+        self.assertNotIn("jwt=secret", summary)
+        self.assertIn("signed asset URL redacted", summary)
+        self.assertIn("Downloaded archive failed integrity validation.", summary)
 
     def test_generate_structured_response_parses_json_content(self) -> None:
         payload = {

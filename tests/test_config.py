@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from offerquest import config as offer_config
 from offerquest.cli import build_parser
+from offerquest.errors import ConfigError
 from offerquest.profile import build_candidate_profile
 
 
@@ -94,6 +95,14 @@ SQL
         )
 
         self.assertEqual(args.offerquest_config, Path("config/custom.json"))
+
+    def test_load_config_invalid_json_raises_config_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "offerquest.json"
+            config_path.write_text("{invalid", encoding="utf-8")
+
+            with self.assertRaises(ConfigError):
+                offer_config.load_config(config_path)
 
 
 if __name__ == "__main__":

@@ -3,8 +3,26 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from offerquest.web.app import validate_required_form_fields
+
 
 class WebAppTests(unittest.TestCase):
+    def test_validate_required_form_fields_formats_missing_labels(self) -> None:
+        error = validate_required_form_fields(
+            {
+                "cv_path": "data/cv.txt",
+                "jobs_file": "",
+                "output_path": "",
+            },
+            required=[
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("output_path", "Output path"),
+            ],
+        )
+
+        self.assertEqual(error, "Jobs file and Output path are required.")
+
     def test_dashboard_route_returns_html(self) -> None:
         try:
             from fastapi.testclient import TestClient

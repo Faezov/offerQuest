@@ -1,11 +1,11 @@
 import argparse
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 from .. import config as _config
-from ..errors import ProfileValidationError
-from ..ollama import OllamaError
+from ..errors import OfferQuestError
 from ..workspace import ProjectState
 from ..workbench import (
     build_artifact_preview,
@@ -33,6 +33,28 @@ from ..workbench import (
     run_resume_tailoring_plan_build,
 )
 
+LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+logger = logging.getLogger(__name__)
+
+
+def validate_required_form_fields(
+    values: dict[str, str | None],
+    *,
+    required: list[tuple[str, str]],
+) -> str | None:
+    missing_labels = [
+        label
+        for field_name, label in required
+        if not str(values.get(field_name) or "").strip()
+    ]
+    if not missing_labels:
+        return None
+    if len(missing_labels) == 1:
+        return f"{missing_labels[0]} is required."
+    if len(missing_labels) == 2:
+        return f"{missing_labels[0]} and {missing_labels[1]} are required."
+    return f"{', '.join(missing_labels[:-1])}, and {missing_labels[-1]} are required."
+
 
 def create_app(
     *,
@@ -56,6 +78,7 @@ def create_app(
     root_value = workspace_root or os.getenv("OFFERQUEST_WORKSPACE_ROOT") or Path.cwd()
     root = Path(root_value).resolve()
     project_state = ProjectState.from_root(root)
+    logger.info("Creating OfferQuest workbench app for %s", root)
 
     templates_dir = Path(__file__).with_name("templates")
     static_dir = Path(__file__).with_name("static")
@@ -241,7 +264,19 @@ def create_app(
         cover_letter_path = str(form.get("cover_letter_path") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
 
-        if not cv_path or not cover_letter_path or not output_path:
+        error = validate_required_form_fields(
+            {
+                "cv_path": cv_path,
+                "cover_letter_path": cover_letter_path,
+                "output_path": output_path,
+            },
+            required=[
+                ("cv_path", "CV file"),
+                ("cover_letter_path", "Cover letter file"),
+                ("output_path", "Output path"),
+            ],
+        )
+        if error:
             return render(
                 request,
                 "build_profile.html",
@@ -252,7 +287,7 @@ def create_app(
                         cv_path=cv_path or None,
                         cover_letter_path=cover_letter_path or None,
                         output_path=output_path or None,
-                        error="CV file, cover letter file, and output path are all required.",
+                        error=error,
                     ),
                 },
             )
@@ -264,7 +299,7 @@ def create_app(
                 cover_letter_path=cover_letter_path,
                 output_path=output_path,
             )
-        except ValueError as exc:
+        except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
                 "build_profile.html",
@@ -412,7 +447,17 @@ def create_app(
             )
 
         if intent == "refresh_jobs":
-            if not config_path or not output_dir:
+            error = validate_required_form_fields(
+                {
+                    "config_path": config_path,
+                    "output_dir": output_dir,
+                },
+                required=[
+                    ("config_path", "Config path"),
+                    ("output_dir", "Output directory"),
+                ],
+            )
+            if error:
                 return render(
                     request,
                     "job_sources.html",
@@ -423,7 +468,7 @@ def create_app(
                             app_id=app_id or None,
                             refresh_config_path=config_path or None,
                             refresh_output_dir=output_dir or None,
-                            refresh_error="Config path and output directory are both required.",
+                            refresh_error=error,
                         ),
                     },
                 )
@@ -434,7 +479,7 @@ def create_app(
                     config_path=config_path,
                     output_dir=output_dir,
                 )
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, OfferQuestError) as exc:
                 return render(
                     request,
                     "job_sources.html",
@@ -510,6 +555,39 @@ def create_app(
         top_n_raw = str(form.get("top_n") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
 
+        error = validate_required_form_fields(
+            {
+                "cv_path": cv_path,
+                "jobs_file": jobs_file,
+                "top_n": top_n_raw,
+                "output_path": output_path,
+            },
+            required=[
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("top_n", "Rerank count"),
+                ("output_path", "Output path"),
+            ],
+        )
+        if error:
+            return render(
+                request,
+                "rerank_jobs.html",
+                {
+                    "page_title": "Rerank Jobs",
+                    "view": build_rerank_jobs_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        top_n=top_n_raw or None,
+                        output_path=output_path or None,
+                        error=error,
+                    ),
+                },
+            )
+
         try:
             top_n = int(top_n_raw)
         except ValueError:
@@ -531,25 +609,6 @@ def create_app(
                 },
             )
 
-        if not cv_path or not jobs_file or not output_path:
-            return render(
-                request,
-                "rerank_jobs.html",
-                {
-                    "page_title": "Rerank Jobs",
-                    "view": build_rerank_jobs_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        top_n=top_n_raw or None,
-                        output_path=output_path or None,
-                        error="CV file, jobs file, rerank count, and output path are all required.",
-                    ),
-                },
-            )
-
         try:
             result = run_rerank_jobs_build(
                 project_state,
@@ -560,7 +619,7 @@ def create_app(
                 top_n=top_n,
                 output_path=output_path,
             )
-        except ValueError as exc:
+        except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
                 "rerank_jobs.html",
@@ -607,7 +666,21 @@ def create_app(
         jobs_file = str(form.get("jobs_file") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
 
-        if not job_id or not cv_path or not jobs_file or not output_path:
+        error = validate_required_form_fields(
+            {
+                "job_id": job_id,
+                "cv_path": cv_path,
+                "jobs_file": jobs_file,
+                "output_path": output_path,
+            },
+            required=[
+                ("job_id", "Selected job"),
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("output_path", "Output path"),
+            ],
+        )
+        if error:
             return render(
                 request,
                 "tailor_cv.html",
@@ -621,7 +694,7 @@ def create_app(
                         base_cover_letter_path=base_cover_letter_path,
                         jobs_file=jobs_file or None,
                         output_path=output_path or None,
-                        error="Selected job, CV file, jobs file, and output path are all required.",
+                        error=error,
                     ),
                 },
             )
@@ -635,7 +708,7 @@ def create_app(
                 job_id=job_id,
                 output_path=output_path,
             )
-        except (ValueError, ProfileValidationError) as exc:
+        except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
                 "tailor_cv.html",
@@ -684,7 +757,21 @@ def create_app(
         export_docx = bool(form.get("export_docx"))
         docx_output_path = str(form.get("docx_output_path") or "").strip() or None
 
-        if not job_id or not cv_path or not jobs_file or not output_path:
+        error = validate_required_form_fields(
+            {
+                "job_id": job_id,
+                "cv_path": cv_path,
+                "jobs_file": jobs_file,
+                "output_path": output_path,
+            },
+            required=[
+                ("job_id", "Selected job"),
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("output_path", "Output path"),
+            ],
+        )
+        if error:
             return render(
                 request,
                 "tailor_cv_draft.html",
@@ -700,7 +787,7 @@ def create_app(
                         output_path=output_path or None,
                         export_docx=export_docx,
                         docx_output_path=docx_output_path,
-                        error="Selected job, CV file, jobs file, and output path are all required.",
+                        error=error,
                     ),
                 },
             )
@@ -716,7 +803,7 @@ def create_app(
                 export_docx=export_docx,
                 docx_output_path=docx_output_path,
             )
-        except (ValueError, ProfileValidationError) as exc:
+        except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
                 "tailor_cv_draft.html",
@@ -771,6 +858,43 @@ def create_app(
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
 
+        error = validate_required_form_fields(
+            {
+                "job_id": job_id,
+                "cv_path": cv_path,
+                "jobs_file": jobs_file,
+                "output_path": output_path,
+            },
+            required=[
+                ("job_id", "Selected job"),
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("output_path", "Output path"),
+            ],
+        )
+        if error:
+            return render(
+                request,
+                "build_cover_letter.html",
+                {
+                    "page_title": "Generate Cover Letter",
+                    "view": build_cover_letter_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        draft_mode=draft_mode,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error=error,
+                    ),
+                },
+            )
+
         try:
             llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
         except ValueError:
@@ -797,29 +921,6 @@ def create_app(
                 },
             )
 
-        if not job_id or not cv_path or not jobs_file or not output_path:
-            return render(
-                request,
-                "build_cover_letter.html",
-                {
-                    "page_title": "Generate Cover Letter",
-                    "view": build_cover_letter_form_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        draft_mode=draft_mode,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        output_path=output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error="Selected job, CV file, jobs file, and output path are all required.",
-                    ),
-                },
-            )
-
         try:
             result = run_cover_letter_build(
                 project_state,
@@ -833,7 +934,7 @@ def create_app(
                 llm_base_url=llm_base_url,
                 llm_timeout_seconds=llm_timeout_seconds,
             )
-        except (ValueError, ProfileValidationError, OllamaError) as exc:
+        except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
                 "build_cover_letter.html",
@@ -892,6 +993,45 @@ def create_app(
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
 
+        error = validate_required_form_fields(
+            {
+                "job_id": job_id,
+                "cv_path": cv_path,
+                "jobs_file": jobs_file,
+                "rule_based_output_path": rule_based_output_path,
+                "llm_output_path": llm_output_path,
+            },
+            required=[
+                ("job_id", "Selected job"),
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("rule_based_output_path", "Rule-based output path"),
+                ("llm_output_path", "LLM output path"),
+            ],
+        )
+        if error:
+            return render(
+                request,
+                "compare_cover_letters.html",
+                {
+                    "page_title": "Compare Drafts",
+                    "view": build_cover_letter_compare_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        rule_based_output_path=rule_based_output_path or None,
+                        llm_output_path=llm_output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error=error,
+                    ),
+                },
+            )
+
         try:
             llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
         except ValueError:
@@ -917,29 +1057,6 @@ def create_app(
                 },
             )
 
-        if not job_id or not cv_path or not jobs_file or not rule_based_output_path or not llm_output_path:
-            return render(
-                request,
-                "compare_cover_letters.html",
-                {
-                    "page_title": "Compare Drafts",
-                    "view": build_cover_letter_compare_view(
-                        project_state,
-                        ranking_file=ranking_file,
-                        job_id=job_id,
-                        cv_path=cv_path or None,
-                        base_cover_letter_path=base_cover_letter_path,
-                        jobs_file=jobs_file or None,
-                        rule_based_output_path=rule_based_output_path or None,
-                        llm_output_path=llm_output_path or None,
-                        llm_model=llm_model,
-                        llm_base_url=llm_base_url,
-                        llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error="Selected job, CV file, jobs file, and both output paths are required.",
-                    ),
-                },
-            )
-
         try:
             result = run_cover_letter_compare(
                 project_state,
@@ -953,7 +1070,7 @@ def create_app(
                 llm_base_url=llm_base_url,
                 llm_timeout_seconds=llm_timeout_seconds,
             )
-        except (ValueError, ProfileValidationError, OllamaError) as exc:
+        except (ValueError, OfferQuestError) as exc:
             return render(
                 request,
                 "compare_cover_letters.html",
@@ -1038,10 +1155,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the OfferQuest local web workbench")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Workspace root, default: current directory")
     parser.add_argument("--config", type=Path, help="Optional OfferQuest JSON config override")
+    parser.add_argument("--log-level", default="INFO", choices=LOG_LEVEL_NAMES, help="Logging verbosity for workbench diagnostics, default: INFO")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host, default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=8787, help="Bind port, default: 8787")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for local development")
     args = parser.parse_args(argv)
+    configure_logging(args.log_level)
 
     try:
         import uvicorn
@@ -1052,7 +1171,9 @@ def main(argv: list[str] | None = None) -> int:
 
     os.environ["OFFERQUEST_WORKSPACE_ROOT"] = str(args.root.resolve())
     if args.config:
+        _config.load_config(args.config)
         os.environ[_config.CONFIG_PATH_ENVVAR] = str(args.config.resolve())
+    logger.info("Starting OfferQuest workbench on %s:%s (reload=%s)", args.host, args.port, args.reload)
 
     if args.reload:
         uvicorn.run(
@@ -1064,6 +1185,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    app = create_app(workspace_root=args.root, config_path=args.config)
+    try:
+        app = create_app(workspace_root=args.root, config_path=args.config)
+    except OfferQuestError as exc:
+        raise SystemExit(f"error: {exc}") from exc
     uvicorn.run(app, host=args.host, port=args.port, reload=False)
     return 0
+
+
+def configure_logging(level_name: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level_name.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )

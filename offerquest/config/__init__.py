@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..errors import ConfigError
+
 DEFAULTS_PATH = Path(__file__).parent / "defaults.json"
 CONFIG_PATH_ENVVAR = "OFFERQUEST_CONFIG"
 
@@ -84,12 +86,28 @@ def resolve_config_path(path: str | Path | None = None) -> Path | None:
 
 
 def load_config(path: str | Path | None = None) -> Config:
-    base = json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
+    try:
+        base = json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ConfigError(f"Could not read bundled OfferQuest defaults from {DEFAULTS_PATH}.") from exc
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"Bundled OfferQuest defaults in {DEFAULTS_PATH} are invalid JSON.") from exc
+
     config_path = resolve_config_path(path)
     if config_path is not None:
-        overlay = json.loads(config_path.read_text(encoding="utf-8"))
+        try:
+            overlay = json.loads(config_path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ConfigError(f"Could not read OfferQuest config file: {config_path}") from exc
+        except json.JSONDecodeError as exc:
+            raise ConfigError(f"OfferQuest config file is invalid JSON: {config_path}") from exc
         base = _deep_merge(base, overlay)
-    return _config_from_dict(base)
+
+    try:
+        return _config_from_dict(base)
+    except (KeyError, TypeError, ValueError) as exc:
+        source = str(config_path) if config_path is not None else str(DEFAULTS_PATH)
+        raise ConfigError(f"OfferQuest config is missing or mis-typing required fields: {source}") from exc
 
 
 _active: Config | None = None

@@ -6,6 +6,8 @@ import zipfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+from .errors import DocumentExtractionError
+
 ZIP_MAGIC = b"PK\x03\x04"
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
@@ -74,37 +76,56 @@ LEGACY_WORD_NOISE = {
 
 def read_document_text(path: str | Path) -> str:
     document_path = Path(path)
-    header = document_path.read_bytes()[:8]
+    try:
+        header = document_path.read_bytes()[:8]
+    except OSError as exc:
+        raise DocumentExtractionError(f"Could not read document: {document_path}") from exc
 
     if header.startswith(ZIP_MAGIC):
         return extract_zip_document_text(document_path)
     if header.startswith(OLE_MAGIC):
         return extract_legacy_word_text(document_path)
 
-    return normalize_text(document_path.read_text(encoding="utf-8", errors="ignore"))
+    try:
+        return normalize_text(document_path.read_text(encoding="utf-8", errors="ignore"))
+    except OSError as exc:
+        raise DocumentExtractionError(f"Could not read document text from {document_path}") from exc
 
 
 def extract_zip_document_text(path: Path) -> str:
-    with zipfile.ZipFile(path) as archive:
-        names = set(archive.namelist())
-        if "content.xml" in names:
-            return extract_odt_like_text(path)
-        if "word/document.xml" in names:
-            return extract_docx_text(path)
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = set(archive.namelist())
+            if "content.xml" in names:
+                return extract_odt_like_text(path)
+            if "word/document.xml" in names:
+                return extract_docx_text(path)
+    except OSError as exc:
+        raise DocumentExtractionError(f"Could not open zip-based document {path}") from exc
+    except zipfile.BadZipFile as exc:
+        raise DocumentExtractionError(f"{path} looks like a zip document but could not be opened.") from exc
 
-    raise ValueError(f"{path} is a zip document, but its structure is not supported")
+    raise DocumentExtractionError(f"{path} is a zip document, but its structure is not supported")
 
 
 def extract_odt_like_text(path: Path) -> str:
-    with zipfile.ZipFile(path) as archive:
-        if "content.xml" not in archive.namelist():
-            raise ValueError(f"{path} does not contain content.xml")
-        content = archive.read("content.xml")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            if "content.xml" not in archive.namelist():
+                raise DocumentExtractionError(f"{path} does not contain content.xml")
+            content = archive.read("content.xml")
+    except OSError as exc:
+        raise DocumentExtractionError(f"Could not open ODT-like document {path}") from exc
+    except zipfile.BadZipFile as exc:
+        raise DocumentExtractionError(f"{path} is not a readable ODT-like zip document.") from exc
 
-    root = ET.fromstring(content)
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as exc:
+        raise DocumentExtractionError(f"{path} contains invalid XML in content.xml") from exc
     office_text = root.find(".//office:text", ODT_NAMESPACES)
     if office_text is None:
-        raise ValueError(f"{path} does not contain office:text content")
+        raise DocumentExtractionError(f"{path} does not contain office:text content")
 
     paragraph_tags = {
         f"{{{ODT_NAMESPACES['text']}}}p",
@@ -123,12 +144,20 @@ def extract_odt_like_text(path: Path) -> str:
 
 
 def extract_docx_text(path: Path) -> str:
-    with zipfile.ZipFile(path) as archive:
-        if "word/document.xml" not in archive.namelist():
-            raise ValueError(f"{path} does not contain word/document.xml")
-        content = archive.read("word/document.xml")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            if "word/document.xml" not in archive.namelist():
+                raise DocumentExtractionError(f"{path} does not contain word/document.xml")
+            content = archive.read("word/document.xml")
+    except OSError as exc:
+        raise DocumentExtractionError(f"Could not open DOCX document {path}") from exc
+    except zipfile.BadZipFile as exc:
+        raise DocumentExtractionError(f"{path} is not a readable DOCX zip document.") from exc
 
-    root = ET.fromstring(content)
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as exc:
+        raise DocumentExtractionError(f"{path} contains invalid XML in word/document.xml") from exc
     paragraph_tags = {
         f"{{{DOCX_NAMESPACES['w']}}}p",
     }
@@ -160,11 +189,11 @@ def extract_legacy_word_text(path: Path) -> str:
                 timeout=30,
             )
         except FileNotFoundError as exc:
-            raise RuntimeError(
+            raise DocumentExtractionError(
                 "The `strings` command is required to extract legacy Word documents."
             ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
+            raise DocumentExtractionError(
                 f"`strings` timed out while extracting {path}."
             ) from exc
 
@@ -173,7 +202,7 @@ def extract_legacy_word_text(path: Path) -> str:
 
     cleaned = clean_legacy_word_lines(outputs)
     if not cleaned:
-        raise ValueError(f"Could not extract readable text from {path}")
+        raise DocumentExtractionError(f"Could not extract readable text from {path}")
 
     return "\n".join(cleaned)
 

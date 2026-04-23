@@ -5,10 +5,12 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from offerquest.errors import DocumentExtractionError
 from offerquest.extractors import (
     clean_legacy_word_lines,
     extract_docx_text,
     extract_odt_like_text,
+    extract_zip_document_text,
 )
 
 
@@ -79,6 +81,15 @@ class ExtractorTests(unittest.TestCase):
             extracted = extract_docx_text(path)
 
         self.assertEqual(extracted, "Hello world\nSecond paragraph")
+
+    def test_extract_zip_document_text_raises_document_extraction_error_for_unsupported_zip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "sample.doc"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("not-supported.txt", "hello")
+
+            with self.assertRaises(DocumentExtractionError):
+                extract_zip_document_text(path)
 
 
 if __name__ == "__main__":

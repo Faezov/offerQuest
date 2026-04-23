@@ -53,8 +53,8 @@ def build_candidate_profile(
     combined_text = "\n".join([cv_text, cover_letter_text])
 
     cfg = _config.active()
-    skills = detect_pattern_matches(combined_text, cfg.skill_patterns)
-    domains = detect_pattern_matches(combined_text, cfg.domain_patterns)
+    skills = find_pattern_matches(combined_text, cfg.skill_patterns)
+    domains = find_pattern_matches(combined_text, cfg.domain_patterns)
     target_role_from_cover_letter = extract_target_role(cover_letter_text)
     name = extract_name(cv_text, cover_letter_text)
     location = extract_location(cv_text, cover_letter_text)
@@ -220,10 +220,6 @@ def extract_summary(sections: dict[str, list[str]]) -> str | None:
         if len(line.split()) > 5:
             return line
     return None
-
-
-def detect_pattern_matches(text: str, patterns: dict[str, list[str]]) -> list[str]:
-    return find_pattern_matches(text, patterns)
 
 
 def extract_target_role(cover_letter_text: str) -> str | None:

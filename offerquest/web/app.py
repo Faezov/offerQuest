@@ -174,26 +174,6 @@ def collect_required_field_errors(
     return errors
 
 
-def validate_required_form_fields(
-    values: dict[str, str | None],
-    *,
-    required: list[tuple[str, str]],
-) -> str | None:
-    field_errors = collect_required_field_errors(values, required=required)
-    missing_labels = [
-        label
-        for field_name, label in required
-        if field_name in field_errors
-    ]
-    if not missing_labels:
-        return None
-    if len(missing_labels) == 1:
-        return f"{missing_labels[0]} is required."
-    if len(missing_labels) == 2:
-        return f"{missing_labels[0]} and {missing_labels[1]} are required."
-    return f"{', '.join(missing_labels[:-1])}, and {missing_labels[-1]} are required."
-
-
 def summarize_field_errors(
     field_errors: FieldErrors,
     *,

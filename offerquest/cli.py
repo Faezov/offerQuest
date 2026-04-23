@@ -225,12 +225,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Start the local Ollama server using the detected Ollama CLI",
     )
 
-    ollama_status_parser = subparsers.add_parser(
-        "ollama-status",
-        help="Check whether a local Ollama server is reachable and list available models",
-    )
-    ollama_status_parser.add_argument("--base-url", default=DEFAULT_OLLAMA_BASE_URL, help="Ollama base URL, default: http://localhost:11434")
-
     ats_parser = subparsers.add_parser(
         "ats-check",
         help="Run ATS-style resume checks against one target job",
@@ -579,11 +573,6 @@ def _cmd_generate_cover_letters_llm(args: argparse.Namespace, parser: argparse.A
     return 0
 
 
-def _cmd_ollama_status(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    print(json.dumps(get_ollama_status(args.base_url), indent=2))
-    return 0
-
-
 def _cmd_ats_check(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     project_state = ProjectState.from_root(Path.cwd())
     if args.job:
@@ -861,7 +850,6 @@ _COMMAND: dict[str, Callable[[argparse.Namespace, argparse.ArgumentParser], int]
     "init-workspace": _cmd_init_workspace,
     "doctor": _cmd_doctor,
     "ollama": _cmd_ollama,
-    "ollama-status": _cmd_ollama_status,
     "build-profile": _cmd_build_profile,
     "export-docx": _cmd_export_docx,
     "generate-cover-letter": _cmd_generate_cover_letter,

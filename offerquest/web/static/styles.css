@@ -775,6 +775,10 @@ h1 {
   gap: 0.45rem;
 }
 
+.field--error {
+  gap: 0.4rem;
+}
+
 .field span {
   font-weight: 700;
 }
@@ -783,6 +787,12 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 0.94rem;
+}
+
+.field__error {
+  color: #b91c1c;
+  font-size: 0.94rem;
+  font-weight: 700;
 }
 
 .field--checkbox {
@@ -811,6 +821,12 @@ h1 {
 .field select:focus-visible {
   border-color: rgba(15, 118, 110, 0.42);
   box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
+.field--error input,
+.field--error select {
+  border-color: rgba(185, 28, 28, 0.4);
+  background: rgba(254, 242, 242, 0.92);
 }
 
 .field__checkbox input[type="checkbox"] {

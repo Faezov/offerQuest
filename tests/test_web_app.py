@@ -12,11 +12,15 @@ from urllib.parse import urlencode
 from offerquest.web.app import (
     AUTO_PORT,
     OllamaJobStore,
+    build_job_source_field_errors,
+    collect_required_field_errors,
     format_workbench_url,
     main,
+    map_job_source_exception_to_field_errors,
     normalize_progress,
     parse_port_argument,
     resolve_port,
+    summarize_field_errors,
     validate_required_form_fields,
 )
 
@@ -153,6 +157,74 @@ class WebAppTests(unittest.TestCase):
         )
 
         self.assertEqual(error, "Jobs file and Output path are required.")
+
+    def test_collect_required_field_errors_returns_field_mapping(self) -> None:
+        field_errors = collect_required_field_errors(
+            {
+                "cv_path": "data/cv.txt",
+                "jobs_file": "",
+                "output_path": "",
+            },
+            required=[
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("output_path", "Output path"),
+            ],
+        )
+
+        self.assertEqual(
+            field_errors,
+            {
+                "jobs_file": "Jobs file is required.",
+                "output_path": "Output path is required.",
+            },
+        )
+
+    def test_summarize_field_errors_prefers_specific_message_for_single_error(self) -> None:
+        self.assertEqual(
+            summarize_field_errors({"top_n": "Top count must be at least 1."}),
+            "Top count must be at least 1.",
+        )
+        self.assertEqual(
+            summarize_field_errors(
+                {
+                    "cv_path": "CV file is required.",
+                    "jobs_file": "Jobs file is required.",
+                }
+            ),
+            "Please fix the highlighted fields and try again.",
+        )
+
+    def test_build_job_source_field_errors_matches_selected_source_type(self) -> None:
+        field_errors = build_job_source_field_errors(
+            {
+                "name": "",
+                "type": "adzuna",
+                "what": "",
+                "where": "",
+                "pages": "0",
+                "results_per_page": "abc",
+            }
+        )
+
+        self.assertEqual(field_errors["source_name"], "Source name is required.")
+        self.assertEqual(field_errors["adzuna_what"], "Enter search keywords or a location.")
+        self.assertEqual(field_errors["adzuna_where"], "Enter search keywords or a location.")
+        self.assertEqual(field_errors["adzuna_pages"], "Adzuna pages must be at least 1.")
+        self.assertEqual(
+            field_errors["adzuna_results_per_page"],
+            "Adzuna results per page must be a whole number.",
+        )
+
+    def test_map_job_source_exception_to_field_errors_targets_matching_input(self) -> None:
+        self.assertEqual(
+            map_job_source_exception_to_field_errors("Output filenames must be unique."),
+            {"source_output": "Output filenames must be unique."},
+        )
+        self.assertEqual(
+            map_job_source_exception_to_field_errors("Greenhouse sources require a board token."),
+            {"greenhouse_board_token": "Greenhouse sources require a board token."},
+        )
 
     def test_normalize_progress_clamps_to_percentage_bounds(self) -> None:
         self.assertEqual(normalize_progress(-10), 0)

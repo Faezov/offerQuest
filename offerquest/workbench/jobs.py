@@ -11,6 +11,7 @@ from ..profile import build_candidate_profile
 from ..reranking import rerank_job_records
 from ..workspace import ProjectState, relative_to_root
 from ._util import (
+    attach_form_feedback,
     build_ranking_preview_items,
     choose_ranking_source,
     list_job_record_files,
@@ -90,6 +91,7 @@ def build_rerank_jobs_form_view(
     top_n: str | None = None,
     output_path: str | None = None,
     error: str | None = None,
+    field_errors: dict[str, str] | None = None,
     result: BuildRerankJobsResult | None = None,
 ) -> dict[str, Any]:
     ranking_sources = list_ranking_sources(project_state)
@@ -97,38 +99,42 @@ def build_rerank_jobs_form_view(
     documents = list_profile_source_files(project_state)
     jobs_files = list_job_record_files(project_state)
 
-    return {
-        "ranking_sources": ranking_sources,
-        "selected_ranking_file": selected_source["relative_path"] if selected_source else ranking_file,
-        "selected_ranking_filename": selected_source["path"].name if selected_source else None,
-        "selected_ranking_modified_at": selected_source["modified_at"] if selected_source else None,
-        "selected_ranking_job_count": (
-            selected_source["payload"].get("job_count")
-            or len(selected_source["payload"].get("rankings", []))
-            if selected_source
-            else 0
-        ),
-        "selected_ranking_run_reference": selected_source["run_reference"] if selected_source else None,
-        "selected_ranking_strategy": (
-            selected_source["payload"].get("rerank_strategy")
-            if selected_source and isinstance(selected_source.get("payload"), dict)
-            else None
-        ),
-        "selected_ranking_preview": build_ranking_preview_items(selected_source),
-        "documents": documents,
-        "jobs_files": jobs_files,
-        "selected_cv": cv_path or select_default_document(documents, preferred_terms=["cv", "resume"]),
-        "selected_base_cover_letter": base_cover_letter_path
-        or select_default_document(documents, preferred_terms=["cover", "letter", "cl"]),
-        "selected_jobs_file": jobs_file or select_default_jobs_file(jobs_files),
-        "selected_top_n": top_n or suggest_rerank_top_n(selected_source),
-        "selected_output": output_path or suggest_rerank_output_path(selected_source),
-        "error": error,
-        "result": result,
-        "has_rankings": bool(ranking_sources),
-        "has_jobs_files": bool(jobs_files),
-        "has_documents": bool(documents),
-    }
+    return attach_form_feedback(
+        {
+            "ranking_sources": ranking_sources,
+            "selected_ranking_file": selected_source["relative_path"] if selected_source else ranking_file,
+            "selected_ranking_filename": selected_source["path"].name if selected_source else None,
+            "selected_ranking_modified_at": selected_source["modified_at"] if selected_source else None,
+            "selected_ranking_job_count": (
+                selected_source["payload"].get("job_count")
+                or len(selected_source["payload"].get("rankings", []))
+                if selected_source
+                else 0
+            ),
+            "selected_ranking_run_reference": selected_source["run_reference"] if selected_source else None,
+            "selected_ranking_strategy": (
+                selected_source["payload"].get("rerank_strategy")
+                if selected_source and isinstance(selected_source.get("payload"), dict)
+                else None
+            ),
+            "selected_ranking_preview": build_ranking_preview_items(selected_source),
+            "documents": documents,
+            "jobs_files": jobs_files,
+            "selected_cv": cv_path
+            or select_default_document(documents, preferred_terms=["cv", "resume"]),
+            "selected_base_cover_letter": base_cover_letter_path
+            or select_default_document(documents, preferred_terms=["cover", "letter", "cl"]),
+            "selected_jobs_file": jobs_file or select_default_jobs_file(jobs_files),
+            "selected_top_n": top_n or suggest_rerank_top_n(selected_source),
+            "selected_output": output_path or suggest_rerank_output_path(selected_source),
+            "result": result,
+            "has_rankings": bool(ranking_sources),
+            "has_jobs_files": bool(jobs_files),
+            "has_documents": bool(documents),
+        },
+        error=error,
+        field_errors=field_errors,
+    )
 
 
 def run_rerank_jobs_build(

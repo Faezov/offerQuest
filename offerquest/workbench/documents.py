@@ -24,6 +24,7 @@ from ..resume_tailoring import (
 )
 from ..workspace import ProjectState, relative_to_root
 from ._util import (
+    attach_form_feedback,
     choose_ranking_job,
     choose_ranking_source,
     list_job_record_files,
@@ -146,6 +147,7 @@ def build_cover_letter_form_view(
     llm_base_url: str | None = None,
     llm_timeout_seconds: str | None = None,
     error: str | None = None,
+    field_errors: dict[str, str] | None = None,
     result: BuildCoverLetterResult | None = None,
 ) -> dict[str, Any]:
     ranking_sources = list_ranking_sources(project_state)
@@ -165,34 +167,37 @@ def build_cover_letter_form_view(
     selected_output = output_path or suggest_cover_letter_output_path(selected_job, draft_mode=selected_draft_mode)
     ollama_state = build_ollama_form_state(llm_base_url)
 
-    return {
-        "ranking_sources": ranking_sources,
-        "selected_ranking_file": selected_source["relative_path"] if selected_source else ranking_file,
-        "selected_job": selected_job,
-        "selected_draft_mode": selected_draft_mode,
-        "documents": documents,
-        "jobs_files": jobs_files,
-        "selected_cv": selected_cv,
-        "selected_base_cover_letter": selected_base_cover_letter,
-        "selected_jobs_file": selected_jobs_file,
-        "selected_output": selected_output,
-        "selected_llm_model": select_default_ollama_model(
-            ollama_state["status"],
-            explicit_model=llm_model,
-        ),
-        "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
-        "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
-        "ollama_status": ollama_state["status"],
-        "available_llm_models": ollama_state["available_models"],
-        "recommended_llm_models": list(RECOMMENDED_OLLAMA_MODELS),
-        "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
-        or not bool(ollama_state["available_models"]),
-        "error": error,
-        "result": result,
-        "has_rankings": bool(ranking_sources),
-        "has_jobs_files": bool(jobs_files),
-        "has_documents": bool(documents),
-    }
+    return attach_form_feedback(
+        {
+            "ranking_sources": ranking_sources,
+            "selected_ranking_file": selected_source["relative_path"] if selected_source else ranking_file,
+            "selected_job": selected_job,
+            "selected_draft_mode": selected_draft_mode,
+            "documents": documents,
+            "jobs_files": jobs_files,
+            "selected_cv": selected_cv,
+            "selected_base_cover_letter": selected_base_cover_letter,
+            "selected_jobs_file": selected_jobs_file,
+            "selected_output": selected_output,
+            "selected_llm_model": select_default_ollama_model(
+                ollama_state["status"],
+                explicit_model=llm_model,
+            ),
+            "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
+            "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
+            "ollama_status": ollama_state["status"],
+            "available_llm_models": ollama_state["available_models"],
+            "recommended_llm_models": list(RECOMMENDED_OLLAMA_MODELS),
+            "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
+            or not bool(ollama_state["available_models"]),
+            "result": result,
+            "has_rankings": bool(ranking_sources),
+            "has_jobs_files": bool(jobs_files),
+            "has_documents": bool(documents),
+        },
+        error=error,
+        field_errors=field_errors,
+    )
 
 
 def build_cover_letter_compare_view(
@@ -209,6 +214,7 @@ def build_cover_letter_compare_view(
     llm_base_url: str | None = None,
     llm_timeout_seconds: str | None = None,
     error: str | None = None,
+    field_errors: dict[str, str] | None = None,
     result: CompareCoverLettersResult | None = None,
 ) -> dict[str, Any]:
     selection = build_cover_letter_selection_context(
@@ -222,26 +228,29 @@ def build_cover_letter_compare_view(
     selected_job = selection["selected_job"]
     ollama_state = build_ollama_form_state(llm_base_url)
 
-    return {
-        **selection,
-        "selected_rule_based_output": rule_based_output_path
-        or suggest_cover_letter_output_path(selected_job, draft_mode="rule_based"),
-        "selected_llm_output": llm_output_path
-        or suggest_cover_letter_output_path(selected_job, draft_mode="llm"),
-        "selected_llm_model": select_default_ollama_model(
-            ollama_state["status"],
-            explicit_model=llm_model,
-        ),
-        "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
-        "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
-        "ollama_status": ollama_state["status"],
-        "available_llm_models": ollama_state["available_models"],
-        "recommended_llm_models": list(RECOMMENDED_OLLAMA_MODELS),
-        "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
-        or not bool(ollama_state["available_models"]),
-        "error": error,
-        "result": result,
-    }
+    return attach_form_feedback(
+        {
+            **selection,
+            "selected_rule_based_output": rule_based_output_path
+            or suggest_cover_letter_output_path(selected_job, draft_mode="rule_based"),
+            "selected_llm_output": llm_output_path
+            or suggest_cover_letter_output_path(selected_job, draft_mode="llm"),
+            "selected_llm_model": select_default_ollama_model(
+                ollama_state["status"],
+                explicit_model=llm_model,
+            ),
+            "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
+            "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
+            "ollama_status": ollama_state["status"],
+            "available_llm_models": ollama_state["available_models"],
+            "recommended_llm_models": list(RECOMMENDED_OLLAMA_MODELS),
+            "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
+            or not bool(ollama_state["available_models"]),
+            "result": result,
+        },
+        error=error,
+        field_errors=field_errors,
+    )
 
 
 def build_resume_tailoring_form_view(
@@ -254,6 +263,7 @@ def build_resume_tailoring_form_view(
     jobs_file: str | None = None,
     output_path: str | None = None,
     error: str | None = None,
+    field_errors: dict[str, str] | None = None,
     result: BuildResumeTailoringPlanResult | None = None,
 ) -> dict[str, Any]:
     selection = build_cover_letter_selection_context(
@@ -266,12 +276,15 @@ def build_resume_tailoring_form_view(
     )
     selected_job = selection["selected_job"]
 
-    return {
-        **selection,
-        "selected_output": output_path or suggest_resume_tailoring_output_path(selected_job),
-        "error": error,
-        "result": result,
-    }
+    return attach_form_feedback(
+        {
+            **selection,
+            "selected_output": output_path or suggest_resume_tailoring_output_path(selected_job),
+            "result": result,
+        },
+        error=error,
+        field_errors=field_errors,
+    )
 
 
 def build_resume_tailored_draft_form_view(
@@ -286,6 +299,7 @@ def build_resume_tailored_draft_form_view(
     export_docx: str | bool | None = None,
     docx_output_path: str | None = None,
     error: str | None = None,
+    field_errors: dict[str, str] | None = None,
     result: BuildResumeTailoredDraftResult | None = None,
 ) -> dict[str, Any]:
     selection = build_cover_letter_selection_context(
@@ -300,14 +314,17 @@ def build_resume_tailored_draft_form_view(
     selected_output = output_path or suggest_resume_tailored_draft_output_path(selected_job)
     selected_export_docx = normalize_boolean_toggle(export_docx, default=True)
 
-    return {
-        **selection,
-        "selected_output": selected_output,
-        "selected_export_docx": selected_export_docx,
-        "selected_docx_output": docx_output_path or suggest_docx_output_path(selected_output),
-        "error": error,
-        "result": result,
-    }
+    return attach_form_feedback(
+        {
+            **selection,
+            "selected_output": selected_output,
+            "selected_export_docx": selected_export_docx,
+            "selected_docx_output": docx_output_path or suggest_docx_output_path(selected_output),
+            "result": result,
+        },
+        error=error,
+        field_errors=field_errors,
+    )
 
 
 def prepare_cover_letter_inputs(

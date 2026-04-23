@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+  {% set field_errors = view.field_errors or {} %}
   <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
@@ -16,25 +17,31 @@
 
       {% if view.has_documents %}
         <form method="post" class="form-stack">
-          <label class="field">
+          <label class="field{% if field_errors.get('cv_path') %} field--error{% endif %}">
             <span>CV file</span>
-            <select name="cv_path" required>
+            <select name="cv_path" required aria-invalid="{{ 'true' if field_errors.get('cv_path') else 'false' }}" {% if view.first_error_field == 'cv_path' %}data-error-focus="true"{% endif %}>
               {% for document in view.documents %}
                 <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
               {% endfor %}
             </select>
+            {% if field_errors.get('cv_path') %}
+              <span class="field__error">{{ field_errors.get('cv_path') }}</span>
+            {% endif %}
           </label>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('cover_letter_path') %} field--error{% endif %}">
             <span>Cover letter file</span>
-            <select name="cover_letter_path" required>
+            <select name="cover_letter_path" required aria-invalid="{{ 'true' if field_errors.get('cover_letter_path') else 'false' }}" {% if view.first_error_field == 'cover_letter_path' %}data-error-focus="true"{% endif %}>
               {% for document in view.documents %}
                 <option value="{{ document }}" {% if document == view.selected_cover_letter %}selected{% endif %}>{{ document }}</option>
               {% endfor %}
             </select>
+            {% if field_errors.get('cover_letter_path') %}
+              <span class="field__error">{{ field_errors.get('cover_letter_path') }}</span>
+            {% endif %}
           </label>
 
-          <details class="form-disclosure">
+          <details class="form-disclosure" {% if field_errors.get('output_path') %}open{% endif %}>
             <summary class="form-disclosure__summary">
               <div class="form-disclosure__intro">
                 <p class="eyebrow">Advanced Output</p>
@@ -42,9 +49,13 @@
               </div>
             </summary>
             <div class="form-disclosure__body">
-              <label class="field">
+              <label class="field{% if field_errors.get('output_path') %} field--error{% endif %}">
                 <span>Output JSON path</span>
-                <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+                <input type="text" name="output_path" value="{{ view.selected_output }}" required aria-invalid="{{ 'true' if field_errors.get('output_path') else 'false' }}" {% if view.first_error_field == 'output_path' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">Default: <code>{{ view.selected_output }}</code></span>
+                {% if field_errors.get('output_path') %}
+                  <span class="field__error">{{ field_errors.get('output_path') }}</span>
+                {% endif %}
               </label>
             </div>
           </details>
@@ -89,6 +100,7 @@
       <div class="button-row">
         <a class="primary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
         <a class="secondary-button" href="{{ request.url_for('runs') }}">View Run History</a>
+        <button class="secondary-button" type="button" data-copy-text="{{ view.result.output_path_relative }}">Copy Output Path</button>
       </div>
       <dl class="detail-grid">
         <div>

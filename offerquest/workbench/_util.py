@@ -129,6 +129,25 @@ def pretty_json_text(content: str) -> str:
         return stripped
 
 
+def attach_form_feedback(
+    state: dict[str, Any],
+    *,
+    error: str | None = None,
+    field_errors: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    normalized_field_errors = {
+        str(field_name): str(message)
+        for field_name, message in (field_errors or {}).items()
+        if str(message).strip()
+    }
+    return {
+        **state,
+        "error": error,
+        "field_errors": normalized_field_errors,
+        "first_error_field": next(iter(normalized_field_errors), None),
+    }
+
+
 def load_json_payload(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))

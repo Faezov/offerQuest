@@ -63,6 +63,7 @@ class SaveJobSourceConfigResult:
     action: str
     source_name: str
     source_count: int
+    restorable_source_form_data: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -107,10 +108,13 @@ def build_job_sources_view(
     refresh_config_path: str | None = None,
     refresh_output_dir: str | None = None,
     refresh_error: str | None = None,
+    refresh_field_errors: dict[str, str] | None = None,
     refresh_result: BuildRefreshJobsResult | None = None,
     source_form_data: dict[str, Any] | None = None,
     source_form_error: str | None = None,
+    source_field_errors: dict[str, str] | None = None,
     source_form_result: SaveJobSourceConfigResult | None = None,
+    credentials_field_errors: dict[str, str] | None = None,
     edit_source_index: int | None = None,
     duplicate_source_index: int | None = None,
 ) -> dict[str, Any]:
@@ -142,16 +146,22 @@ def build_job_sources_view(
         "credentials_path_display": format_user_path(credentials["path"]),
         "source_summary": source_summary,
         "credentials_error": credentials_error,
+        "credentials_field_errors": dict(credentials_field_errors or {}),
+        "credentials_first_error_field": next(iter(credentials_field_errors or {}), None),
         "credentials_result": credentials_result,
         "selected_refresh_config_path": selected_config_path,
         "selected_refresh_output_dir": selected_output_dir,
         "selected_refresh_summary_output": default_summary_output,
         "refresh_error": refresh_error,
+        "refresh_field_errors": dict(refresh_field_errors or {}),
+        "refresh_first_error_field": next(iter(refresh_field_errors or {}), None),
         "refresh_result": refresh_result,
         "source_form": source_form,
         "source_form_mode": source_form_mode,
         "source_form_notice": source_form_notice,
         "source_form_error": source_form_error,
+        "source_field_errors": dict(source_field_errors or {}),
+        "source_first_error_field": next(iter(source_field_errors or {}), None),
         "source_form_result": source_form_result,
         "source_type_options": list(JOB_SOURCE_TYPES),
     }
@@ -431,6 +441,7 @@ def run_job_source_delete(
         action="deleted",
         source_name=str(removed_source.get("name") or "source"),
         source_count=len(sources),
+        restorable_source_form_data=source_to_form_data(removed_source),
     )
 
 

@@ -5,6 +5,7 @@ import os
 import socket
 import threading
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -158,15 +159,31 @@ NAV_GROUP_SPECS: tuple[dict[str, Any], ...] = (
 )
 
 
+FieldErrors = dict[str, str]
+
+
+def collect_required_field_errors(
+    values: dict[str, str | None],
+    *,
+    required: list[tuple[str, str]],
+) -> FieldErrors:
+    errors: FieldErrors = {}
+    for field_name, label in required:
+        if not str(values.get(field_name) or "").strip():
+            errors[field_name] = f"{label} is required."
+    return errors
+
+
 def validate_required_form_fields(
     values: dict[str, str | None],
     *,
     required: list[tuple[str, str]],
 ) -> str | None:
+    field_errors = collect_required_field_errors(values, required=required)
     missing_labels = [
         label
         for field_name, label in required
-        if not str(values.get(field_name) or "").strip()
+        if field_name in field_errors
     ]
     if not missing_labels:
         return None
@@ -175,6 +192,101 @@ def validate_required_form_fields(
     if len(missing_labels) == 2:
         return f"{missing_labels[0]} and {missing_labels[1]} are required."
     return f"{', '.join(missing_labels[:-1])}, and {missing_labels[-1]} are required."
+
+
+def summarize_field_errors(
+    field_errors: FieldErrors,
+    *,
+    fallback: str = "Please fix the highlighted fields and try again.",
+) -> str | None:
+    if not field_errors:
+        return None
+    if len(field_errors) == 1:
+        return next(iter(field_errors.values()))
+    return fallback
+
+
+def map_common_form_error(message: str) -> FieldErrors:
+    if message.startswith("CV file not found:"):
+        return {"cv_path": message}
+    if message.startswith("Cover letter file not found:"):
+        return {"cover_letter_path": message}
+    if message.startswith("Base cover letter file not found:"):
+        return {"base_cover_letter_path": message}
+    if message.startswith("Jobs file not found:"):
+        return {"jobs_file": message}
+    if message.startswith("Job id not found"):
+        return {"job_id": message}
+    if message == "Output path must stay inside the current workspace.":
+        return {"output_path": message}
+    return {}
+
+
+def build_job_source_field_errors(source_form_data: dict[str, str]) -> FieldErrors:
+    field_errors: FieldErrors = {}
+    source_type = str(source_form_data.get("type") or "").strip().lower()
+    if not str(source_form_data.get("name") or "").strip():
+        field_errors["source_name"] = "Source name is required."
+    if source_type not in {"adzuna", "greenhouse", "manual"}:
+        field_errors["source_type"] = "Choose a supported source type."
+        return field_errors
+
+    if source_type == "adzuna":
+        if not str(source_form_data.get("what") or "").strip() and not str(
+            source_form_data.get("where") or ""
+        ).strip():
+            message = "Enter search keywords or a location."
+            field_errors["adzuna_what"] = message
+            field_errors["adzuna_where"] = message
+        for field_name, label in (
+            ("pages", "Adzuna pages"),
+            ("results_per_page", "Adzuna results per page"),
+        ):
+            raw_value = str(source_form_data.get(field_name) or "").strip()
+            input_name = f"adzuna_{field_name}"
+            if not raw_value:
+                field_errors[input_name] = f"{label} is required."
+                continue
+            try:
+                value = int(raw_value)
+            except ValueError:
+                field_errors[input_name] = f"{label} must be a whole number."
+                continue
+            if value < 1:
+                field_errors[input_name] = f"{label} must be at least 1."
+    elif source_type == "greenhouse":
+        if not str(source_form_data.get("board_token") or "").strip():
+            field_errors["greenhouse_board_token"] = "Board token is required for Greenhouse sources."
+    elif source_type == "manual" and not str(source_form_data.get("input_path") or "").strip():
+        field_errors["manual_input_path"] = "Input path is required for manual sources."
+
+    return field_errors
+
+
+def map_job_source_exception_to_field_errors(message: str) -> FieldErrors:
+    if message in {"Source name is required.", "Source names must be unique."}:
+        return {"source_name": message}
+    if message in {
+        "Output filename is required.",
+        "Output filenames must be unique.",
+    }:
+        return {"source_output": message}
+    if message == "Source type must be one of: adzuna, greenhouse, manual.":
+        return {"source_type": "Choose a supported source type."}
+    if message == "Greenhouse sources require a board token.":
+        return {"greenhouse_board_token": message}
+    if message == "Manual sources require an input path.":
+        return {"manual_input_path": message}
+    if message == "Adzuna sources need at least search keywords or a location.":
+        return {
+            "adzuna_what": message,
+            "adzuna_where": message,
+        }
+    if message.startswith("Adzuna pages"):
+        return {"adzuna_pages": message}
+    if message.startswith("Adzuna results per page"):
+        return {"adzuna_results_per_page": message}
+    return {}
 
 
 def parse_port_argument(value: str) -> int | str:
@@ -785,7 +897,7 @@ def create_app(
         cover_letter_path = str(form.get("cover_letter_path") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
 
-        error = validate_required_form_fields(
+        field_errors = collect_required_field_errors(
             {
                 "cv_path": cv_path,
                 "cover_letter_path": cover_letter_path,
@@ -797,7 +909,7 @@ def create_app(
                 ("output_path", "Output path"),
             ],
         )
-        if error:
+        if field_errors:
             return render(
                 request,
                 "build_profile.html",
@@ -808,7 +920,8 @@ def create_app(
                         cv_path=cv_path or None,
                         cover_letter_path=cover_letter_path or None,
                         output_path=output_path or None,
-                        error=error,
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -832,6 +945,7 @@ def create_app(
                         cover_letter_path=cover_letter_path,
                         output_path=output_path,
                         error=str(exc),
+                        field_errors=map_common_form_error(str(exc)),
                     ),
                 },
             )
@@ -875,13 +989,35 @@ def create_app(
         }
         source_index_raw = str(form.get("source_index") or "").strip()
 
-        if intent == "save_source":
+        if intent in {"save_source", "restore_source"}:
+            source_field_errors = build_job_source_field_errors(source_form_data)
+            if source_field_errors:
+                return render(
+                    request,
+                    "job_sources.html",
+                    {
+                        "page_title": "Job Sources",
+                        "view": build_job_sources_view(
+                            project_state,
+                            app_id=app_id or None,
+                            refresh_config_path=config_path or None,
+                            refresh_output_dir=output_dir or None,
+                            source_form_data=source_form_data,
+                            source_form_error=summarize_field_errors(
+                                source_field_errors,
+                                fallback="Please fix the highlighted source fields and try again.",
+                            ),
+                            source_field_errors=source_field_errors,
+                        ),
+                    },
+                )
             try:
                 source_result = run_job_source_save(
                     project_state,
                     source_form_data=source_form_data,
                 )
             except (OSError, ValueError) as exc:
+                source_field_errors = map_job_source_exception_to_field_errors(str(exc))
                 return render(
                     request,
                     "job_sources.html",
@@ -894,9 +1030,13 @@ def create_app(
                             refresh_output_dir=output_dir or None,
                             source_form_data=source_form_data,
                             source_form_error=str(exc),
+                            source_field_errors=source_field_errors,
                         ),
                     },
                 )
+
+            if intent == "restore_source":
+                source_result = replace(source_result, action="restored")
 
             return render(
                 request,
@@ -968,7 +1108,7 @@ def create_app(
             )
 
         if intent == "refresh_jobs":
-            error = validate_required_form_fields(
+            refresh_field_errors = collect_required_field_errors(
                 {
                     "config_path": config_path,
                     "output_dir": output_dir,
@@ -978,7 +1118,7 @@ def create_app(
                     ("output_dir", "Output directory"),
                 ],
             )
-            if error:
+            if refresh_field_errors:
                 return render(
                     request,
                     "job_sources.html",
@@ -989,7 +1129,11 @@ def create_app(
                             app_id=app_id or None,
                             refresh_config_path=config_path or None,
                             refresh_output_dir=output_dir or None,
-                            refresh_error=error,
+                            refresh_error=summarize_field_errors(
+                                refresh_field_errors,
+                                fallback="Please fill in the required refresh settings.",
+                            ),
+                            refresh_field_errors=refresh_field_errors,
                         ),
                     },
                 )
@@ -1012,6 +1156,7 @@ def create_app(
                             refresh_config_path=config_path,
                             refresh_output_dir=output_dir,
                             refresh_error=str(exc),
+                            refresh_field_errors=map_common_form_error(str(exc)),
                         ),
                     },
                 )
@@ -1036,6 +1181,12 @@ def create_app(
                 app_key=app_key or None,
             )
         except (OSError, ValueError) as exc:
+            credentials_field_errors: FieldErrors = {}
+            if str(exc).startswith("Adzuna app id and app key are required."):
+                credentials_field_errors = {
+                    "app_id": "Adzuna app id is required.",
+                    "app_key": "Adzuna app key is required.",
+                }
             return render(
                 request,
                 "job_sources.html",
@@ -1047,6 +1198,7 @@ def create_app(
                         refresh_config_path=config_path or None,
                         refresh_output_dir=output_dir or None,
                         credentials_error=str(exc),
+                        credentials_field_errors=credentials_field_errors,
                     ),
                 },
             )
@@ -1210,7 +1362,7 @@ def create_app(
         top_n_raw = str(form.get("top_n") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
 
-        error = validate_required_form_fields(
+        field_errors = collect_required_field_errors(
             {
                 "cv_path": cv_path,
                 "jobs_file": jobs_file,
@@ -1224,7 +1376,7 @@ def create_app(
                 ("output_path", "Output path"),
             ],
         )
-        if error:
+        if field_errors:
             return render(
                 request,
                 "rerank_jobs.html",
@@ -1238,7 +1390,11 @@ def create_app(
                         jobs_file=jobs_file or None,
                         top_n=top_n_raw or None,
                         output_path=output_path or None,
-                        error=error,
+                        error=summarize_field_errors(
+                            field_errors,
+                            fallback="Please fix the highlighted fields and try again.",
+                        ),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1246,6 +1402,7 @@ def create_app(
         try:
             top_n = int(top_n_raw)
         except ValueError:
+            field_errors = {"top_n": "Top count must be a whole number."}
             return render(
                 request,
                 "rerank_jobs.html",
@@ -1259,7 +1416,28 @@ def create_app(
                         jobs_file=jobs_file or None,
                         top_n=top_n_raw or None,
                         output_path=output_path or None,
-                        error="Top count must be a whole number.",
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
+                    ),
+                },
+            )
+        if top_n < 1:
+            field_errors = {"top_n": "Top count must be at least 1."}
+            return render(
+                request,
+                "rerank_jobs.html",
+                {
+                    "page_title": "Rerank Jobs",
+                    "view": build_rerank_jobs_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        top_n=top_n_raw or None,
+                        output_path=output_path or None,
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1289,6 +1467,7 @@ def create_app(
                         top_n=top_n_raw,
                         output_path=output_path,
                         error=str(exc),
+                        field_errors=map_common_form_error(str(exc)),
                     ),
                 },
             )
@@ -1321,7 +1500,7 @@ def create_app(
         jobs_file = str(form.get("jobs_file") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
 
-        error = validate_required_form_fields(
+        field_errors = collect_required_field_errors(
             {
                 "job_id": job_id,
                 "cv_path": cv_path,
@@ -1335,7 +1514,7 @@ def create_app(
                 ("output_path", "Output path"),
             ],
         )
-        if error:
+        if field_errors:
             return render(
                 request,
                 "tailor_cv.html",
@@ -1349,7 +1528,11 @@ def create_app(
                         base_cover_letter_path=base_cover_letter_path,
                         jobs_file=jobs_file or None,
                         output_path=output_path or None,
-                        error=error,
+                        error=summarize_field_errors(
+                            field_errors,
+                            fallback="Please fix the highlighted fields and try again.",
+                        ),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1378,6 +1561,7 @@ def create_app(
                         jobs_file=jobs_file,
                         output_path=output_path,
                         error=str(exc),
+                        field_errors=map_common_form_error(str(exc)),
                     ),
                 },
             )
@@ -1412,7 +1596,7 @@ def create_app(
         export_docx = bool(form.get("export_docx"))
         docx_output_path = str(form.get("docx_output_path") or "").strip() or None
 
-        error = validate_required_form_fields(
+        field_errors = collect_required_field_errors(
             {
                 "job_id": job_id,
                 "cv_path": cv_path,
@@ -1426,7 +1610,7 @@ def create_app(
                 ("output_path", "Output path"),
             ],
         )
-        if error:
+        if field_errors:
             return render(
                 request,
                 "tailor_cv_draft.html",
@@ -1442,7 +1626,11 @@ def create_app(
                         output_path=output_path or None,
                         export_docx=export_docx,
                         docx_output_path=docx_output_path,
-                        error=error,
+                        error=summarize_field_errors(
+                            field_errors,
+                            fallback="Please fix the highlighted fields and try again.",
+                        ),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1459,6 +1647,9 @@ def create_app(
                 docx_output_path=docx_output_path,
             )
         except (ValueError, OfferQuestError) as exc:
+            field_errors = map_common_form_error(str(exc))
+            if str(exc).startswith("DOCX output path"):
+                field_errors = {"docx_output_path": str(exc)}
             return render(
                 request,
                 "tailor_cv_draft.html",
@@ -1475,6 +1666,7 @@ def create_app(
                         export_docx=export_docx,
                         docx_output_path=docx_output_path,
                         error=str(exc),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1513,7 +1705,7 @@ def create_app(
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
 
-        error = validate_required_form_fields(
+        field_errors = collect_required_field_errors(
             {
                 "job_id": job_id,
                 "cv_path": cv_path,
@@ -1527,7 +1719,7 @@ def create_app(
                 ("output_path", "Output path"),
             ],
         )
-        if error:
+        if field_errors:
             return render(
                 request,
                 "build_cover_letter.html",
@@ -1545,7 +1737,11 @@ def create_app(
                         llm_model=llm_model,
                         llm_base_url=llm_base_url,
                         llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=error,
+                        error=summarize_field_errors(
+                            field_errors,
+                            fallback="Please fix the highlighted fields and try again.",
+                        ),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1554,6 +1750,7 @@ def create_app(
             llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
         except ValueError:
             llm_timeout_seconds = None
+            field_errors = {"llm_timeout_seconds": "LLM timeout must be a whole number of seconds."}
             return render(
                 request,
                 "build_cover_letter.html",
@@ -1571,7 +1768,32 @@ def create_app(
                         llm_model=llm_model,
                         llm_base_url=llm_base_url,
                         llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error="LLM timeout must be a whole number of seconds.",
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
+                    ),
+                },
+            )
+        if llm_timeout_seconds is not None and llm_timeout_seconds < 1:
+            field_errors = {"llm_timeout_seconds": "LLM timeout must be at least 1 second."}
+            return render(
+                request,
+                "build_cover_letter.html",
+                {
+                    "page_title": "Generate Cover Letter",
+                    "view": build_cover_letter_form_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        draft_mode=draft_mode,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        output_path=output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1608,6 +1830,11 @@ def create_app(
                         llm_base_url=llm_base_url,
                         llm_timeout_seconds=llm_timeout_seconds_raw,
                         error=str(exc),
+                        field_errors=(
+                            {"llm_timeout_seconds": str(exc)}
+                            if "timeout" in str(exc).lower()
+                            else map_common_form_error(str(exc))
+                        ),
                     ),
                 },
             )
@@ -1648,7 +1875,7 @@ def create_app(
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
 
-        error = validate_required_form_fields(
+        field_errors = collect_required_field_errors(
             {
                 "job_id": job_id,
                 "cv_path": cv_path,
@@ -1664,7 +1891,7 @@ def create_app(
                 ("llm_output_path", "LLM output path"),
             ],
         )
-        if error:
+        if field_errors:
             return render(
                 request,
                 "compare_cover_letters.html",
@@ -1682,7 +1909,11 @@ def create_app(
                         llm_model=llm_model,
                         llm_base_url=llm_base_url,
                         llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error=error,
+                        error=summarize_field_errors(
+                            field_errors,
+                            fallback="Please fix the highlighted fields and try again.",
+                        ),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1690,6 +1921,7 @@ def create_app(
         try:
             llm_timeout_seconds = int(llm_timeout_seconds_raw) if llm_timeout_seconds_raw else None
         except ValueError:
+            field_errors = {"llm_timeout_seconds": "LLM timeout must be a whole number of seconds."}
             return render(
                 request,
                 "compare_cover_letters.html",
@@ -1707,7 +1939,32 @@ def create_app(
                         llm_model=llm_model,
                         llm_base_url=llm_base_url,
                         llm_timeout_seconds=llm_timeout_seconds_raw,
-                        error="LLM timeout must be a whole number of seconds.",
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
+                    ),
+                },
+            )
+        if llm_timeout_seconds is not None and llm_timeout_seconds < 1:
+            field_errors = {"llm_timeout_seconds": "LLM timeout must be at least 1 second."}
+            return render(
+                request,
+                "compare_cover_letters.html",
+                {
+                    "page_title": "Compare Drafts",
+                    "view": build_cover_letter_compare_view(
+                        project_state,
+                        ranking_file=ranking_file,
+                        job_id=job_id,
+                        cv_path=cv_path or None,
+                        base_cover_letter_path=base_cover_letter_path,
+                        jobs_file=jobs_file or None,
+                        rule_based_output_path=rule_based_output_path or None,
+                        llm_output_path=llm_output_path or None,
+                        llm_model=llm_model,
+                        llm_base_url=llm_base_url,
+                        llm_timeout_seconds=llm_timeout_seconds_raw,
+                        error=summarize_field_errors(field_errors),
+                        field_errors=field_errors,
                     ),
                 },
             )
@@ -1744,6 +2001,11 @@ def create_app(
                         llm_base_url=llm_base_url,
                         llm_timeout_seconds=llm_timeout_seconds_raw,
                         error=str(exc),
+                        field_errors=(
+                            {"llm_timeout_seconds": str(exc)}
+                            if "timeout" in str(exc).lower()
+                            else map_common_form_error(str(exc))
+                        ),
                     ),
                 },
             )

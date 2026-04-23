@@ -8,6 +8,7 @@ from typing import Any
 from ..profile import build_profile_from_files
 from ..workspace import ProjectState, relative_to_root
 from ._util import (
+    attach_form_feedback,
     list_profile_source_files,
     resolve_workspace_input_path,
     resolve_workspace_output_path,
@@ -31,6 +32,7 @@ def build_profile_form_view(
     cover_letter_path: str | None = None,
     output_path: str | None = None,
     error: str | None = None,
+    field_errors: dict[str, str] | None = None,
     result: BuildProfileResult | None = None,
 ) -> dict[str, Any]:
     documents = list_profile_source_files(project_state)
@@ -41,15 +43,18 @@ def build_profile_form_view(
     )
     default_output = output_path or suggest_profile_output_path(default_cv)
 
-    return {
-        "documents": documents,
-        "selected_cv": default_cv,
-        "selected_cover_letter": default_cover_letter,
-        "selected_output": default_output,
-        "error": error,
-        "result": result,
-        "has_documents": bool(documents),
-    }
+    return attach_form_feedback(
+        {
+            "documents": documents,
+            "selected_cv": default_cv,
+            "selected_cover_letter": default_cover_letter,
+            "selected_output": default_output,
+            "result": result,
+            "has_documents": bool(documents),
+        },
+        error=error,
+        field_errors=field_errors,
+    )
 
 
 def run_profile_build(

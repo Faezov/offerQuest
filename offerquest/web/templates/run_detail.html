@@ -64,10 +64,10 @@
         </div>
         {% for artifact in view.artifacts %}
           <div class="artifact-table__row">
-            <span>{{ artifact.kind or "artifact" }}</span>
-            <span><code>{{ artifact.path }}</code></span>
-            <span>{{ "ready" if artifact.exists else "missing" }}</span>
-            <span>
+            <span data-label="Kind">{{ artifact.kind or "artifact" }}</span>
+            <span data-label="File"><code>{{ artifact.path }}</code></span>
+            <span data-label="Status">{{ "ready" if artifact.exists else "missing" }}</span>
+            <span data-label="Preview">
               <a href="{{ request.url_for('artifact_preview', run_id=view.manifest.id, artifact_index=artifact.index) }}">Preview</a>
             </span>
           </div>

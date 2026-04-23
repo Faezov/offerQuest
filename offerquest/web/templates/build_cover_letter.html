@@ -18,31 +18,59 @@
         <div class="empty-state">
           <h3>No ranking data available</h3>
           <p>Run job ranking first so the workbench has a selected job to work from.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('rankings') }}">Open Latest Rankings</a>
+            <a class="secondary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+          </div>
         </div>
       {% elif not view.selected_job %}
         <div class="empty-state">
           <h3>No job selected</h3>
           <p>Open this page from the rankings view or pass a valid ranked job id.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('rankings') }}">Choose From Rankings</a>
+          </div>
         </div>
       {% elif not view.has_documents %}
         <div class="empty-state">
           <h3>No candidate documents found</h3>
           <p>Add your CV and base cover letter under <code>data/</code> first.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('build_profile_page') }}">Open Build Profile</a>
+            <a class="secondary-button" href="{{ request.url_for('dashboard') }}">Open Overview</a>
+          </div>
         </div>
       {% elif not view.has_jobs_files %}
         <div class="empty-state">
           <h3>No jobs files found</h3>
           <p>Import or fetch jobs into <code>outputs/</code> first so the selected ranking can be resolved back to a full job record.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+            <a class="secondary-button" href="{{ request.url_for('rankings') }}">Back to Rankings</a>
+          </div>
         </div>
       {% else %}
         <form method="post" class="form-stack">
           <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
           <input type="hidden" name="job_id" value="{{ view.selected_job.job_id or '' }}">
 
-          <div class="callout">
-            <p><strong>Selected job:</strong> {{ view.selected_job.job_title }} at {{ view.selected_job.company }}</p>
-            <p><strong>Location:</strong> {{ view.selected_job.location or "Unknown" }}</p>
-            <p><strong>Score:</strong> {{ view.selected_job.score }}</p>
+          <div class="feature-callout">
+            <div class="feature-callout__body">
+              <p class="eyebrow">Selected Job</p>
+              <h3>{{ view.selected_job.job_title }} at {{ view.selected_job.company }}</h3>
+              <p>Keep the resume direction set first, then use this screen to generate the matching letter in the style you want.</p>
+              <div class="feature-callout__meta">
+                <span class="meta-pill">Score {{ view.selected_job.score }}</span>
+                <span class="meta-pill">{{ view.selected_job.location or "Unknown location" }}</span>
+                <span class="meta-pill">{{ "LLM draft" if view.selected_draft_mode == "llm" else "Rule-based draft" }}</span>
+              </div>
+            </div>
+            <div class="button-row">
+              <a class="secondary-button" href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.selected_job.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Open CV Draft</a>
+              {% if view.selected_job.job_url %}
+                <a class="secondary-button" href="{{ view.selected_job.job_url }}" target="_blank" rel="noreferrer">Open Listing</a>
+              {% endif %}
+            </div>
           </div>
 
           <label class="field">
@@ -83,62 +111,78 @@
             </select>
           </label>
 
-          <label class="field">
-            <span>Output path</span>
-            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
-          </label>
+          <details class="form-disclosure">
+            <summary class="form-disclosure__summary">
+              <div class="form-disclosure__intro">
+                <p class="eyebrow">Advanced Output</p>
+                <p>Change the save path only when you need a custom letter destination.</p>
+              </div>
+            </summary>
+            <div class="form-disclosure__body">
+              <label class="field">
+                <span>Output path</span>
+                <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+              </label>
+            </div>
+          </details>
 
-          <div class="subsection">
-            <h3>LLM Settings</h3>
-            <p class="subsection__summary">These fields are only used when draft mode is set to <code>LLM draft</code>.</p>
+          <details class="form-disclosure" {% if view.selected_draft_mode == "llm" or view.ollama_needs_setup %}open{% endif %}>
+            <summary class="form-disclosure__summary">
+              <div class="form-disclosure__intro">
+                <p class="eyebrow">LLM Settings</p>
+                <p>Only needed when draft mode is set to <code>LLM draft</code>.</p>
+              </div>
+            </summary>
+            <div class="form-disclosure__body">
 
-            {% if not view.ollama_status.command_available and not view.ollama_status.reachable %}
-              <div class="callout">
-                <p><strong>Ollama CLI not found.</strong> Install Ollama first, then run <code>offerquest ollama serve</code> and <code>offerquest ollama pull</code>.</p>
-                <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
-              </div>
-            {% elif not view.ollama_status.reachable %}
-              <div class="callout">
-                <p><strong>Ollama server not reachable.</strong> Start it with <code>offerquest ollama serve</code>, then refresh this page.</p>
-                <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
-              </div>
-            {% elif not view.available_llm_models %}
-              <div class="callout">
-                <p><strong>No Ollama models installed yet.</strong> Pull a recommended model with <code>offerquest ollama pull</code>.</p>
-                <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
-              </div>
-            {% else %}
-              <div class="callout">
-                <p><strong>Installed models:</strong> {{ view.available_llm_models | join(", ") }}</p>
-                {% if view.ollama_status.missing_recommended_models %}
-                  <p><strong>Still recommended:</strong> {{ view.ollama_status.missing_recommended_models | join(", ") }}</p>
-                {% endif %}
-              </div>
-            {% endif %}
-
-            <label class="field">
-              <span>Model</span>
-              {% if view.available_llm_models %}
-                <select name="llm_model">
-                  {% for model_name in view.available_llm_models %}
-                    <option value="{{ model_name }}" {% if model_name == view.selected_llm_model %}selected{% endif %}>{{ model_name }}</option>
-                  {% endfor %}
-                </select>
+              {% if not view.ollama_status.command_available and not view.ollama_status.reachable %}
+                <div class="callout">
+                  <p><strong>Ollama CLI not found.</strong> Install Ollama first, then run <code>offerquest ollama serve</code> and <code>offerquest ollama pull</code>.</p>
+                  <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
+                </div>
+              {% elif not view.ollama_status.reachable %}
+                <div class="callout">
+                  <p><strong>Ollama server not reachable.</strong> Start it with <code>offerquest ollama serve</code>, then refresh this page.</p>
+                  <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
+                </div>
+              {% elif not view.available_llm_models %}
+                <div class="callout">
+                  <p><strong>No Ollama models installed yet.</strong> Pull a recommended model with <code>offerquest ollama pull</code>.</p>
+                  <p><a class="secondary-button" href="{{ ollama_setup_href }}?base_url={{ view.selected_llm_base_url }}">Open Ollama Setup</a></p>
+                </div>
               {% else %}
-                <input type="text" name="llm_model" value="{{ view.selected_llm_model }}">
+                <div class="callout">
+                  <p><strong>Installed models:</strong> {{ view.available_llm_models | join(", ") }}</p>
+                  {% if view.ollama_status.missing_recommended_models %}
+                    <p><strong>Still recommended:</strong> {{ view.ollama_status.missing_recommended_models | join(", ") }}</p>
+                  {% endif %}
+                </div>
               {% endif %}
-            </label>
 
-            <label class="field">
-              <span>Base URL</span>
-              <input type="text" name="llm_base_url" value="{{ view.selected_llm_base_url }}">
-            </label>
+              <label class="field">
+                <span>Model</span>
+                {% if view.available_llm_models %}
+                  <select name="llm_model">
+                    {% for model_name in view.available_llm_models %}
+                      <option value="{{ model_name }}" {% if model_name == view.selected_llm_model %}selected{% endif %}>{{ model_name }}</option>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  <input type="text" name="llm_model" value="{{ view.selected_llm_model }}">
+                {% endif %}
+              </label>
 
-            <label class="field">
-              <span>Timeout seconds</span>
-              <input type="text" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}">
-            </label>
-          </div>
+              <label class="field">
+                <span>Base URL</span>
+                <input type="text" name="llm_base_url" value="{{ view.selected_llm_base_url }}">
+              </label>
+
+              <label class="field">
+                <span>Timeout seconds</span>
+                <input type="text" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}">
+              </label>
+            </div>
+          </details>
 
           {% if view.selected_draft_mode == "llm" and view.ollama_needs_setup %}
             <div class="callout">
@@ -168,16 +212,20 @@
   {% if view.result %}
     <section class="panel-grid">
       <article class="panel">
-        <div class="panel__header">
-          <h2>Draft Created</h2>
-          <p>
-            Saved to <code>{{ view.result.output_path_relative }}</code>.
-            <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
-          </p>
-        </div>
-        <dl class="detail-grid">
-          <div>
-            <dt>Role</dt>
+      <div class="panel__header">
+        <h2>Draft Created</h2>
+        <p>
+          Saved to <code>{{ view.result.output_path_relative }}</code>.
+          <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+        </p>
+      </div>
+      <div class="button-row">
+        <a class="primary-button" href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ view.result.payload.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Compare Both Styles</a>
+        <a class="secondary-button" href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.result.payload.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Review CV Draft</a>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Role</dt>
             <dd>{{ view.result.payload.job_title }}</dd>
           </div>
           <div>

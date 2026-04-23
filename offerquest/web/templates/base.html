@@ -8,35 +8,38 @@
     <link rel="stylesheet" href="{{ request.url_for('static', path='styles.css') }}">
   </head>
   <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <div class="page-shell">
       <header class="hero">
         <div class="hero__glow hero__glow--left"></div>
         <div class="hero__glow hero__glow--right"></div>
         <div class="hero__content">
-          <p class="eyebrow">OfferQuest Local Workbench</p>
+          <div class="hero__heading">
+            <p class="eyebrow">OfferQuest Local Workbench</p>
+            <span class="meta-pill meta-pill--section">{{ page_section }}</span>
+          </div>
           <h1>{{ page_title }}</h1>
-          <p class="hero__summary">
-            Explore runs, generated artifacts, and output history from the workspace model.
-          </p>
+          <p class="hero__summary">{{ page_summary }}</p>
           <div class="hero__meta">
-            <span class="meta-pill">Workspace</span>
-            <code>{{ workspace_root }}</code>
+            <span class="meta-pill">Workspace Root</span>
+            <code class="workspace-chip" title="{{ workspace_root }}">{{ workspace_root }}</code>
           </div>
         </div>
-        <nav class="hero__nav">
-          <a href="{{ request.url_for('dashboard') }}">Overview</a>
-          <a href="{{ ollama_setup_href }}">Ollama Setup</a>
-          <a href="{{ request.url_for('job_sources') }}">Job Sources</a>
-          <a href="{{ request.url_for('build_profile_page') }}">Build Profile</a>
-          <a href="{{ request.url_for('build_resume_tailoring_page') }}">Tailor CV</a>
-          <a href="{{ request.url_for('rankings') }}">Latest Rankings</a>
-          <a href="{{ request.url_for('build_rerank_jobs_page') }}">Rerank Jobs</a>
-          <a href="{{ request.url_for('compare_cover_letters_page') }}">Compare Drafts</a>
-          <a href="{{ request.url_for('runs') }}">Runs</a>
+        <nav class="hero__nav" aria-label="Primary">
+          {% for group in nav_groups %}
+            <section class="nav-group">
+              <p class="nav-group__label">{{ group["label"] }}</p>
+              <div class="nav-group__links">
+                {% for item in group["items"] %}
+                  <a href="{{ item["href"] }}" {% if item["active"] %}class="is-active" aria-current="page"{% endif %}>{{ item["label"] }}</a>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
         </nav>
       </header>
 
-      <main class="content">
+      <main id="main-content" class="content">
         {% block content %}{% endblock %}
       </main>
     </div>

@@ -48,8 +48,8 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
     cfg = _config.active()
     prepared = prepare_matchable_text(job_text)
     job_title = infer_job_title(job_text)
-    job_skills = detect_matches(prepared, cfg.skill_patterns)
-    job_domains = detect_matches(prepared, cfg.domain_patterns)
+    job_skills = set(find_pattern_matches(prepared, cfg.skill_patterns))
+    job_domains = set(find_pattern_matches(prepared, cfg.domain_patterns))
 
     candidate_skills = set(profile.get("core_skills", []))
     candidate_domains = set(profile.get("domains", []))
@@ -116,10 +116,6 @@ def rank_job_files(job_paths: list[Path], profile: dict) -> list[ScoredJob]:
 def rank_job_records(job_records: list[dict], profile: dict) -> list[ScoredJob]:
     ranked = [score_job_record(record, profile) for record in job_records]
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
-
-
-def detect_matches(text: str | MatchableText, patterns: dict[str, list[str]]) -> set[str]:
-    return set(find_pattern_matches(text, patterns))
 
 
 def infer_job_title(job_text: str) -> str:

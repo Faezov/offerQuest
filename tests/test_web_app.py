@@ -21,7 +21,6 @@ from offerquest.web.app import (
     parse_port_argument,
     resolve_port,
     summarize_field_errors,
-    validate_required_form_fields,
 )
 
 
@@ -141,22 +140,6 @@ class WebAppTests(unittest.TestCase):
 
         self.assertEqual(port, 54321)
         self.assertEqual(lookup.call_args.args, ("127.0.0.1",))
-
-    def test_validate_required_form_fields_formats_missing_labels(self) -> None:
-        error = validate_required_form_fields(
-            {
-                "cv_path": "data/cv.txt",
-                "jobs_file": "",
-                "output_path": "",
-            },
-            required=[
-                ("cv_path", "CV file"),
-                ("jobs_file", "Jobs file"),
-                ("output_path", "Output path"),
-            ],
-        )
-
-        self.assertEqual(error, "Jobs file and Output path are required.")
 
     def test_collect_required_field_errors_returns_field_mapping(self) -> None:
         field_errors = collect_required_field_errors(

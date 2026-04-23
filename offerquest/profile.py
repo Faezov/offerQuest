@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import config as _config
 from .extractors import read_document_text
 from .matching import find_pattern_matches
 
@@ -14,62 +15,6 @@ SECTION_HEADERS = {
     "Technical Tools",
     "Certifications",
     "Languages",
-}
-
-SKILL_PATTERNS = {
-    "SQL": ["sql", "querying"],
-    "Python": ["python"],
-    "Pandas": ["pandas"],
-    "Jupyter": ["jupyter"],
-    "Matplotlib": ["matplotlib"],
-    "Excel": ["excel", "microsoft excel"],
-    "Automation": ["automation", "automated", "workflow", "workflows"],
-    "Reporting": ["reporting", "reports", "written reports"],
-    "Data analysis": ["data analysis", "analysis and interpretation", "analytical"],
-    "Data quality": ["data quality", "validation", "integrity", "quality checking"],
-    "Metadata": ["metadata", "data dictionary", "data definitions", "standards"],
-    "Data transformation": ["cleaning", "transformation", "extraction"],
-    "Visualization": ["visualisation", "visualization"],
-    "Stakeholder collaboration": [
-        "stakeholder collaboration",
-        "cross-functional collaboration",
-        "multidisciplinary team",
-    ],
-    "Scientific communication": ["scientific publications", "scientific articles", "publications"],
-    "AWS": ["aws"],
-}
-
-DOMAIN_PATTERNS = {
-    "Healthcare": ["healthcare", "health", "clinical", "mental health"],
-    "Research": ["research", "scientific", "science"],
-    "Public sector": ["public value", "ministry", "government", "national"],
-    "Higher education": ["university", "institute"],
-    "Biotech": ["protein design", "biotechnology", "bioinformatics"],
-}
-
-AUSTRALIAN_STATE_CODES = {
-    "ACT",
-    "NSW",
-    "NT",
-    "QLD",
-    "SA",
-    "TAS",
-    "VIC",
-    "WA",
-}
-
-LOCATION_TERMS = {
-    "australia",
-    "new zealand",
-    "singapore",
-    "canada",
-    "usa",
-    "united states",
-    "uk",
-    "united kingdom",
-    "remote",
-    "hybrid",
-    "onsite",
 }
 
 NAME_DEGREE_SUFFIXES = [
@@ -106,8 +51,9 @@ def build_candidate_profile(
     sections = split_cv_sections(cv_text)
     combined_text = "\n".join([cv_text, cover_letter_text])
 
-    skills = detect_pattern_matches(combined_text, SKILL_PATTERNS)
-    domains = detect_pattern_matches(combined_text, DOMAIN_PATTERNS)
+    cfg = _config.active()
+    skills = detect_pattern_matches(combined_text, cfg.skill_patterns)
+    domains = detect_pattern_matches(combined_text, cfg.domain_patterns)
     target_role_from_cover_letter = extract_target_role(cover_letter_text)
     name = extract_name(cv_text, cover_letter_text)
     location = extract_location(cv_text, cover_letter_text)
@@ -326,29 +272,6 @@ def looks_like_context_line(line: str) -> bool:
     return True
 
 
-_SKILL_TO_KEYWORD: dict[str, str] = {
-    "SQL": "SQL",
-    "Python": "Python",
-    "Pandas": "pandas",
-    "Reporting": "reporting",
-    "Data quality": "data quality",
-    "Metadata": "metadata",
-    "Automation": "automation",
-    "Visualization": "visualization",
-    "Data analysis": "data analysis",
-    "Data transformation": "data transformation",
-    "AWS": "AWS",
-}
-
-_DOMAIN_TO_KEYWORD: dict[str, str] = {
-    "Healthcare": "health",
-    "Research": "research",
-    "Public sector": "government",
-    "Higher education": "university",
-    "Biotech": "biotechnology",
-}
-
-
 def build_search_focus(
     skills: list[str],
     domains: list[str],
@@ -356,7 +279,8 @@ def build_search_focus(
     *,
     location: str | None,
 ) -> dict:
-    priority_titles = ["Senior Data Analyst"]
+    cfg = _config.active()
+    priority_titles = [cfg.search_focus_default_title]
 
     if "Metadata" in skills:
         priority_titles.append("Metadata Analyst / Data Governance Analyst")
@@ -371,9 +295,11 @@ def build_search_focus(
     if target_role_from_cover_letter:
         priority_titles.insert(0, target_role_from_cover_letter)
 
+    skill_map = cfg.search_focus_skill_to_keyword
+    domain_map = cfg.search_focus_domain_to_keyword
     keywords_to_include = dedupe(
-        [_SKILL_TO_KEYWORD[s] for s in skills if s in _SKILL_TO_KEYWORD]
-        + [_DOMAIN_TO_KEYWORD[d] for d in domains if d in _DOMAIN_TO_KEYWORD]
+        [skill_map[s] for s in skills if s in skill_map]
+        + [domain_map[d] for d in domains if d in domain_map]
     )
 
     return {
@@ -424,9 +350,10 @@ def looks_like_location_line(line: str) -> bool:
     lowered = cleaned.lower()
     upper_tokens = {token.upper() for token in re.findall(r"[A-Za-z]{2,}", cleaned)}
 
-    if any(term in lowered for term in LOCATION_TERMS):
+    cfg = _config.active()
+    if any(term in lowered for term in cfg.location_general_terms):
         return True
-    if upper_tokens.intersection(AUSTRALIAN_STATE_CODES):
+    if upper_tokens.intersection(cfg.location_state_codes):
         return True
     if re.fullmatch(r"[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*,\s*[A-Z]{2,3}(?:,\s*[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*)?", cleaned):
         return True

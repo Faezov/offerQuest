@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "skill_patterns": {
+    "SQL": ["sql", "querying"],
+    "Python": ["python"],
+    "Pandas": ["pandas"],
+    "Jupyter": ["jupyter"],
+    "Matplotlib": ["matplotlib"],
+    "Excel": ["excel", "microsoft excel"],
+    "Automation": ["automation", "automated", "workflow", "workflows"],
+    "Reporting": ["reporting", "reports", "written reports"],
+    "Data analysis": ["data analysis", "analysis and interpretation", "analytical"],
+    "Data quality": ["data quality", "validation", "integrity", "quality checking"],
+    "Metadata": ["metadata", "data dictionary", "data definitions", "standards"],
+    "Data transformation": ["cleaning", "transformation", "extraction"],
+    "Visualization": ["visualisation", "visualization"],
+    "Stakeholder collaboration": [
+      "stakeholder collaboration",
+      "cross-functional collaboration",
+      "multidisciplinary team"
+    ],
+    "Scientific communication": ["scientific publications", "scientific articles", "publications"],
+    "AWS": ["aws"],
+    "Tableau": ["tableau"],
+    "Power BI": ["power bi", "powerbi"],
+    "Looker": ["looker"],
+    "dbt": ["dbt"],
+    "Apache Spark": ["apache spark", "pyspark"],
+    "Snowflake": ["snowflake"],
+    "Airflow": ["airflow", "apache airflow"],
+    "Azure": ["azure"],
+    "Google Cloud": ["gcp", "google cloud"],
+    "Databricks": ["databricks"],
+    "Git": ["github", "gitlab", "version control"]
+  },
+  "domain_patterns": {
+    "Healthcare": ["healthcare", "health", "clinical", "mental health"],
+    "Research": ["research", "scientific", "science"],
+    "Public sector": ["public value", "ministry", "government", "national"],
+    "Higher education": ["university", "institute"],
+    "Biotech": ["protein design", "biotechnology", "bioinformatics"]
+  },
+  "role_families": {
+    "analytics": ["analyst", "analytics", "insights", "reporting", "business intelligence", "bi analyst"],
+    "metadata": ["metadata", "data governance", "data dictionary", "data standards"],
+    "quality": ["data quality", "validation", "integrity"],
+    "engineering": ["data engineer", "pipeline", "warehousing", "infrastructure"],
+    "science": ["data scientist", "machine learning", "predictive model"]
+  },
+  "role_penalties": {
+    "science": 20,
+    "engineering": 12
+  },
+  "location": {
+    "primary_terms": [
+      "australia",
+      "sydney",
+      "nsw",
+      "new south wales",
+      "melbourne",
+      "brisbane",
+      "canberra",
+      "perth"
+    ],
+    "remote_terms": ["remote", "hybrid"],
+    "secondary_terms": [
+      "new york",
+      "san francisco",
+      "philadelphia",
+      "london",
+      "singapore",
+      "usa",
+      "united states",
+      "uk"
+    ],
+    "state_codes": ["ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"],
+    "general_terms": [
+      "australia",
+      "new zealand",
+      "singapore",
+      "canada",
+      "usa",
+      "united states",
+      "uk",
+      "united kingdom",
+      "remote",
+      "hybrid",
+      "onsite"
+    ]
+  },
+  "ats": {
+    "extra_patterns": {
+      "Agile": ["agile", "scrum", "kanban"],
+      "Business intelligence": ["business intelligence", "bi analyst"],
+      "Cloud": ["cloud"],
+      "Dashboards": ["dashboard", "dashboards"],
+      "Data governance": ["data governance", "governance"],
+      "Data warehousing": ["data warehouse", "data warehousing", "warehouse"],
+      "ETL": ["etl", "extract transform load"],
+      "Finance": ["finance", "financial", "investment"],
+      "Power BI": ["power bi", "powerbi"],
+      "Stakeholder management": ["stakeholder", "stakeholders"],
+      "Tableau": ["tableau"]
+    },
+    "section_headings": [
+      "Professional Summary",
+      "Core Skills",
+      "Professional Experience",
+      "Education"
+    ],
+    "required_markers": [
+      "required",
+      "must",
+      "essential",
+      "need",
+      "needs",
+      "seeking",
+      "looking for",
+      "experience with",
+      "proficient in",
+      "strong"
+    ],
+    "weights": {
+      "keyword_coverage": 0.35,
+      "required_coverage": 0.25
+    }
+  },
+  "search_focus": {
+    "skill_to_keyword": {
+      "SQL": "SQL",
+      "Python": "Python",
+      "Pandas": "pandas",
+      "Reporting": "reporting",
+      "Data quality": "data quality",
+      "Metadata": "metadata",
+      "Automation": "automation",
+      "Visualization": "visualization",
+      "Data analysis": "data analysis",
+      "Data transformation": "data transformation",
+      "AWS": "AWS"
+    },
+    "domain_to_keyword": {
+      "Healthcare": "health",
+      "Research": "research",
+      "Public sector": "government",
+      "Higher education": "university",
+      "Biotech": "biotechnology"
+    },
+    "default_title": "Senior Data Analyst"
+  },
+  "fallback_resume_title": "Senior Data Analyst"
+}

@@ -3,45 +3,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import config as _config
 from .extractors import read_document_text
 from .jobs import infer_manual_title, job_record_to_text
 from .matching import contains_any_keyword, contains_keyword, find_pattern_matches, prepare_matchable_text
-from .profile import DOMAIN_PATTERNS, SKILL_PATTERNS
-
-ROLE_FAMILIES = {
-    "analytics": ["analyst", "analytics", "insights", "reporting", "business intelligence", "bi analyst"],
-    "metadata": ["metadata", "data governance", "data dictionary", "data standards"],
-    "quality": ["data quality", "validation", "integrity"],
-    "engineering": ["data engineer", "pipeline", "warehousing", "infrastructure"],
-    "science": ["data scientist", "machine learning", "predictive model"],
-}
-
-AUSTRALIA_LOCATION_TERMS = [
-    "australia",
-    "sydney",
-    "nsw",
-    "new south wales",
-    "melbourne",
-    "brisbane",
-    "canberra",
-    "perth",
-]
-
-REMOTE_LOCATION_TERMS = [
-    "remote",
-    "hybrid",
-]
-
-NON_AUSTRALIA_LOCATION_TERMS = [
-    "new york",
-    "san francisco",
-    "philadelphia",
-    "london",
-    "singapore",
-    "usa",
-    "united states",
-    "uk",
-]
 
 
 def score_job_file(job_path: str | Path, profile: dict) -> dict:
@@ -73,11 +38,12 @@ def score_job_record(job_record: dict, profile: dict) -> dict:
 
 
 def score_job_text(job_text: str, profile: dict, *, source_name: str | None = None) -> dict:
+    cfg = _config.active()
     prepared = prepare_matchable_text(job_text)
     job_title = infer_job_title(job_text)
     title_prepared = prepare_matchable_text(job_title)
-    job_skills = detect_matches(prepared, SKILL_PATTERNS)
-    job_domains = detect_matches(prepared, DOMAIN_PATTERNS)
+    job_skills = detect_matches(prepared, cfg.skill_patterns)
+    job_domains = detect_matches(prepared, cfg.domain_patterns)
 
     candidate_skills = set(profile.get("core_skills", []))
     candidate_domains = set(profile.get("domains", []))
@@ -94,10 +60,10 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
     location_score = score_location(prepared)
     penalty_score = 0
 
-    if contains_any_keyword(prepared, ROLE_FAMILIES["science"]):
-        penalty_score += 20
-    if contains_any_keyword(prepared, ROLE_FAMILIES["engineering"]):
-        penalty_score += 12
+    for family, penalty in cfg.role_penalties.items():
+        keywords = cfg.role_families.get(family)
+        if keywords and contains_any_keyword(prepared, keywords):
+            penalty_score += penalty
 
     total_score = max(
         0,
@@ -121,7 +87,7 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
 
     if contains_keyword(prepared, "machine learning") and "Data science" not in candidate_skills:
         gaps.append("The role leans toward machine learning more than the current CV does.")
-    if contains_any_keyword(prepared, ROLE_FAMILIES["engineering"]) and "Automation" not in candidate_skills:
+    if contains_any_keyword(prepared, cfg.role_families.get("engineering", [])) and "Automation" not in candidate_skills:
         gaps.append("The role may lean more toward data engineering infrastructure than analytics/reporting.")
 
     return {
@@ -155,26 +121,28 @@ def infer_job_title(job_text: str) -> str:
 
 
 def score_title_alignment(job_title: str, target_titles: list[str]) -> tuple[int, list[str]]:
+    cfg = _config.active()
     prepared = prepare_matchable_text(strip_parenthetical_text(job_title))
     notes: list[str] = []
+    families = cfg.role_families
 
     if any(contains_keyword(prepared, strip_parenthetical_text(target)) for target in target_titles):
         notes.append("The role title directly matches the target search focus.")
         return 15, notes
 
-    if contains_any_keyword(prepared, ROLE_FAMILIES["metadata"]):
+    if contains_any_keyword(prepared, families.get("metadata", [])):
         notes.append("The title is aligned with metadata or governance work.")
         return 14, notes
-    if contains_any_keyword(prepared, ROLE_FAMILIES["analytics"]):
+    if contains_any_keyword(prepared, families.get("analytics", [])):
         notes.append("The title sits in the analytics/reporting family.")
         return 13, notes
-    if contains_any_keyword(prepared, ROLE_FAMILIES["quality"]):
+    if contains_any_keyword(prepared, families.get("quality", [])):
         notes.append("The title maps well to data quality strengths.")
         return 12, notes
-    if contains_any_keyword(prepared, ROLE_FAMILIES["science"]):
+    if contains_any_keyword(prepared, families.get("science", [])):
         notes.append("The title shifts toward data science, which looks more like a stretch.")
         return 6, notes
-    if contains_any_keyword(prepared, ROLE_FAMILIES["engineering"]):
+    if contains_any_keyword(prepared, families.get("engineering", [])):
         notes.append("The title leans toward data engineering rather than analysis.")
         return 5, notes
 
@@ -196,11 +164,12 @@ def score_seniority(job_text: str | object, years_experience: int | None) -> int
 
 
 def score_location(job_text: str | object) -> int:
-    if contains_any_keyword(job_text, NON_AUSTRALIA_LOCATION_TERMS):
+    cfg = _config.active()
+    if contains_any_keyword(job_text, cfg.location_secondary_terms):
         return 2
-    if contains_any_keyword(job_text, AUSTRALIA_LOCATION_TERMS):
+    if contains_any_keyword(job_text, cfg.location_primary_terms):
         return 10
-    if contains_any_keyword(job_text, REMOTE_LOCATION_TERMS):
+    if contains_any_keyword(job_text, cfg.location_remote_terms):
         return 6
     return 5
 

@@ -137,7 +137,18 @@
       "Visualization": "visualization",
       "Data analysis": "data analysis",
       "Data transformation": "data transformation",
-      "AWS": "AWS"
+      "AWS": "AWS",
+      "Tableau": "Tableau",
+      "Power BI": "Power BI",
+      "Looker": "Looker",
+      "dbt": "dbt",
+      "Apache Spark": "Spark",
+      "Snowflake": "Snowflake",
+      "Airflow": "Airflow",
+      "Azure": "Azure",
+      "Google Cloud": "Google Cloud",
+      "Databricks": "Databricks",
+      "Git": "Git"
     },
     "domain_to_keyword": {
       "Healthcare": "health",
@@ -146,7 +157,21 @@
       "Higher education": "university",
       "Biotech": "biotechnology"
     },
-    "default_title": "Senior Data Analyst"
+    "default_title": "Senior Data Analyst",
+    "titles_by_skill": {
+      "Metadata": ["Metadata Analyst / Data Governance Analyst"],
+      "Reporting": ["Reporting Analyst / Insights Analyst"],
+      "Data quality": ["Data Quality Analyst"]
+    },
+    "titles_by_domain": {
+      "Healthcare": ["Health Data Analyst"],
+      "Research": ["Research Data Analyst"]
+    },
+    "stretch_roles_to_treat_cautiously": [
+      "Machine-learning-heavy Data Scientist roles",
+      "Pure data platform or infrastructure engineering roles",
+      "Roles that require deep BI tooling not shown in the CV"
+    ]
   },
   "fallback_resume_title": "Senior Data Analyst"
 }

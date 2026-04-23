@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from . import config as _config
 from .ats import ats_check_job_file, ats_check_job_record
 from .cover_letter import (
     generate_cover_letter_for_job_file,
@@ -39,6 +40,11 @@ SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OfferQuest job-fit tooling")
+    parser.add_argument(
+        "--offerquest-config",
+        type=Path,
+        help="Optional JSON file that overrides OfferQuest defaults for skills, search focus, and scoring",
+    )
     parser.add_argument(
         "--version",
         action="version",
@@ -247,6 +253,13 @@ def add_profile_reuse_arguments(parser: argparse.ArgumentParser) -> None:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.offerquest_config:
+        try:
+            _config.set_active(_config.load_config(args.offerquest_config))
+        except json.JSONDecodeError as exc:
+            parser.exit(2, f"error: invalid OfferQuest config {args.offerquest_config}: {exc}\n")
+        except OSError as exc:
+            parser.exit(2, f"error: unable to load OfferQuest config {args.offerquest_config}: {exc}\n")
     project_state = ProjectState.from_root(Path.cwd())
 
     try:

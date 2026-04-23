@@ -20,6 +20,62 @@ ADZUNA_ENV_PATH_ENVVAR = "OFFERQUEST_ADZUNA_ENV_FILE"
 ADZUNA_ENV_FILENAME = "adzuna.env"
 SUPPORTED_MANUAL_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 SUPPORTED_JOB_RECORD_SUFFIXES = {".json", ".jsonl"}
+HEADER_LOCATION_ORG_MARKERS = frozenset(
+    {
+        "agency",
+        "clinic",
+        "college",
+        "company",
+        "corp",
+        "corporation",
+        "council",
+        "department",
+        "group",
+        "health",
+        "hospital",
+        "inc",
+        "institute",
+        "lab",
+        "labs",
+        "llc",
+        "ltd",
+        "ministry",
+        "org",
+        "organisation",
+        "organization",
+        "school",
+        "team",
+        "university",
+    }
+)
+HEADER_LOCATION_NON_LOCATION_TERMS = frozenset(
+    {
+        "analyst",
+        "analytics",
+        "consultant",
+        "coordinator",
+        "data",
+        "developer",
+        "director",
+        "engineer",
+        "engineering",
+        "finance",
+        "lead",
+        "manager",
+        "marketing",
+        "officer",
+        "operations",
+        "platform",
+        "principal",
+        "product",
+        "reporting",
+        "scientist",
+        "senior",
+        "specialist",
+        "strategy",
+        "technology",
+    }
+)
 
 
 def fetch_adzuna_jobs(
@@ -392,14 +448,14 @@ def infer_manual_company_and_location(text: str, *, title: str) -> tuple[str | N
     first_line = header_lines[0]
     if "," in first_line:
         possible_company, possible_location = [part.strip() for part in first_line.split(",", 1)]
-        if possible_company and possible_location and looks_like_location(possible_location):
+        if possible_company and possible_location and looks_like_header_location_candidate(possible_location):
             return possible_company, possible_location
 
     company = first_line if not looks_like_location(first_line) else None
     location = None
 
     for line in header_lines[1:]:
-        if looks_like_location(line):
+        if looks_like_header_location_candidate(line):
             location = line
             break
 
@@ -672,6 +728,31 @@ def looks_like_location(value: str) -> bool:
         if term in lowered:
             return True
     return False
+
+
+def looks_like_header_location_candidate(value: str) -> bool:
+    cleaned = normalize_text(value or "")
+    if looks_like_location(cleaned):
+        return True
+    if not cleaned or "@" in cleaned or "http" in cleaned.lower():
+        return False
+    if any(char.isdigit() for char in cleaned):
+        return False
+
+    tokens = re.findall(r"[A-Za-z]+(?:[-'][A-Za-z]+)?", cleaned)
+    if not 1 <= len(tokens) <= 4:
+        return False
+
+    lowered_tokens = {token.lower() for token in tokens}
+    if lowered_tokens.intersection(HEADER_LOCATION_ORG_MARKERS):
+        return False
+    if lowered_tokens.intersection(HEADER_LOCATION_NON_LOCATION_TERMS):
+        return False
+
+    allowed_lower_tokens = {"and", "of", "the"}
+    if not all(token.isupper() or token[0].isupper() or token.lower() in allowed_lower_tokens for token in tokens):
+        return False
+    return True
 
 
 def now_iso() -> str:

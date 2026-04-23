@@ -9,7 +9,7 @@ from .ats import build_ats_report
 from .docx import export_document_as_docx
 from .errors import ProfileValidationError
 from .extractors import read_document_text
-from .jobs import find_job_record, job_record_to_text, read_job_records
+from .jobs import find_job_record, index_job_records, job_record_to_text, read_job_records
 from .ollama import DEFAULT_OLLAMA_BASE_URL, generate_structured_response
 from .profile import build_candidate_profile, looks_like_location_line
 from .scoring import infer_job_title
@@ -166,6 +166,7 @@ def generate_cover_letters_from_ranking(
     export_docx: bool = False,
 ) -> dict:
     job_records = read_job_records(jobs_file)
+    job_index = index_job_records(job_records)
     ranking_payload = json.loads(Path(ranking_file).read_text(encoding="utf-8"))
     rankings = ranking_payload.get("rankings", [])
 
@@ -179,7 +180,7 @@ def generate_cover_letters_from_ranking(
         job_id = ranking.get("job_id")
         if not job_id:
             continue
-        job_record = find_job_record(job_records, job_id)
+        job_record = job_index.get(job_id)
         if job_record is None:
             continue
 
@@ -235,6 +236,7 @@ def generate_cover_letters_from_ranking_llm(
     timeout_seconds: int = 180,
 ) -> dict:
     job_records = read_job_records(jobs_file)
+    job_index = index_job_records(job_records)
     ranking_payload = json.loads(Path(ranking_file).read_text(encoding="utf-8"))
     rankings = ranking_payload.get("rankings", [])
 
@@ -250,7 +252,7 @@ def generate_cover_letters_from_ranking_llm(
         job_id = ranking.get("job_id")
         if not job_id:
             continue
-        job_record = find_job_record(job_records, job_id)
+        job_record = job_index.get(job_id)
         if job_record is None:
             continue
 

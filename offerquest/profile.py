@@ -331,6 +331,29 @@ def looks_like_context_line(line: str) -> bool:
     return True
 
 
+_SKILL_TO_KEYWORD: dict[str, str] = {
+    "SQL": "SQL",
+    "Python": "Python",
+    "Pandas": "pandas",
+    "Reporting": "reporting",
+    "Data quality": "data quality",
+    "Metadata": "metadata",
+    "Automation": "automation",
+    "Visualization": "visualization",
+    "Data analysis": "data analysis",
+    "Data transformation": "data transformation",
+    "AWS": "AWS",
+}
+
+_DOMAIN_TO_KEYWORD: dict[str, str] = {
+    "Healthcare": "health",
+    "Research": "research",
+    "Public sector": "government",
+    "Higher education": "university",
+    "Biotech": "biotechnology",
+}
+
+
 def build_search_focus(
     skills: list[str],
     domains: list[str],
@@ -353,16 +376,10 @@ def build_search_focus(
     if target_role_from_cover_letter:
         priority_titles.insert(0, target_role_from_cover_letter)
 
-    keywords_to_include = [
-        "SQL",
-        "Python",
-        "reporting",
-        "data quality",
-        "metadata",
-        "automation",
-        "health",
-        "research",
-    ]
+    keywords_to_include = dedupe(
+        [_SKILL_TO_KEYWORD[s] for s in skills if s in _SKILL_TO_KEYWORD]
+        + [_DOMAIN_TO_KEYWORD[d] for d in domains if d in _DOMAIN_TO_KEYWORD]
+    )
 
     return {
         "priority_titles": dedupe(priority_titles),

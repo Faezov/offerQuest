@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .extractors import read_document_text
-from .jobs import job_record_to_text
+from .jobs import infer_manual_title, job_record_to_text
 from .matching import contains_any_keyword, contains_keyword, find_pattern_matches, prepare_matchable_text
 from .profile import DOMAIN_PATTERNS, SKILL_PATTERNS
 
@@ -150,10 +151,7 @@ def detect_matches(text: str | object, patterns: dict[str, list[str]]) -> set[st
 
 
 def infer_job_title(job_text: str) -> str:
-    for line in [line.strip() for line in job_text.splitlines() if line.strip()]:
-        if len(line.split()) <= 14 and not line.endswith("."):
-            return line
-    return "Unknown title"
+    return infer_manual_title(job_text, fallback="Unknown title")
 
 
 def score_title_alignment(job_title: str, target_titles: list[str]) -> tuple[int, list[str]]:
@@ -208,4 +206,4 @@ def score_location(job_text: str | object) -> int:
 
 
 def strip_parenthetical_text(value: str) -> str:
-    return " ".join(part.strip() for part in value.split("(") if part.strip())
+    return re.sub(r"\s*\(.*?\)", "", value).strip()

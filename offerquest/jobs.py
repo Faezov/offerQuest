@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -62,27 +63,21 @@ def fetch_adzuna_job_pages(
     if pages < 1:
         raise ValueError("Adzuna pages must be at least 1.")
 
-    record_sets = [
-        annotate_job_records(
-            fetch_adzuna_jobs(
-                app_id=app_id,
-                app_key=app_key,
-                what=what,
-                where=where,
-                country=country,
-                page=page,
-                results_per_page=results_per_page,
-            ),
-            extra_metadata=drop_none(
-                {
-                    "query_what": what,
-                    "query_where": where,
-                    "query_country": country,
-                }
-            ),
+    extra_metadata = drop_none({"query_what": what, "query_where": where, "query_country": country})
+    record_sets: list[list[dict]] = []
+    for page in range(1, pages + 1):
+        batch = fetch_adzuna_jobs(
+            app_id=app_id,
+            app_key=app_key,
+            what=what,
+            where=where,
+            country=country,
+            page=page,
+            results_per_page=results_per_page,
         )
-        for page in range(1, pages + 1)
-    ]
+        if not batch:
+            break
+        record_sets.append(annotate_job_records(batch, extra_metadata=extra_metadata))
     return merge_job_record_sets(*record_sets)
 
 
@@ -243,7 +238,7 @@ def refresh_job_sources(
     return summary
 
 
-def fetch_json(url: str, *, timeout: int = 30) -> dict[str, Any]:
+def fetch_json(url: str, *, timeout: int = 30, retries: int = 3) -> dict[str, Any]:
     request = Request(
         url,
         headers={
@@ -251,9 +246,17 @@ def fetch_json(url: str, *, timeout: int = 30) -> dict[str, Any]:
             "User-Agent": "OfferQuest/0.1.0",
         },
     )
-    with urlopen(request, timeout=timeout) as response:
-        body = response.read().decode("utf-8")
-    return json.loads(body)
+    last_error: Exception
+    for attempt in range(retries):
+        if attempt:
+            time.sleep(2 ** attempt)
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8")
+            return json.loads(body)
+        except Exception as exc:
+            last_error = exc
+    raise last_error
 
 
 def normalize_adzuna_job(job: dict[str, Any], *, country: str) -> dict:
@@ -566,10 +569,15 @@ def write_job_records(path: str | Path, records: list[dict]) -> None:
         text = "\n".join(json.dumps(record, sort_keys=True) for record in normalized)
         if text:
             text += "\n"
-        output_path.write_text(text, encoding="utf-8")
-        return
+    else:
+        text = json.dumps(normalized, indent=2)
 
-    output_path.write_text(json.dumps(normalized, indent=2), encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=output_path.parent, delete=False, suffix=".tmp"
+    ) as handle:
+        handle.write(text)
+        tmp_path = Path(handle.name)
+    tmp_path.replace(output_path)
 
 
 def collect_job_record_inputs(paths: list[str | Path]) -> list[dict]:
@@ -596,6 +604,10 @@ def find_job_record(records: list[dict], job_id: str) -> dict | None:
         if record.get("id") == job_id:
             return record
     return None
+
+
+def index_job_records(records: list[dict]) -> dict[str, dict]:
+    return {record["id"]: record for record in records if record.get("id")}
 
 
 def job_record_to_text(record: dict) -> str:

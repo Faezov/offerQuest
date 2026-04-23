@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARCHIVE_PATH="$ROOT_DIR/.tools/ollama-linux-amd64.tar.zst"
+DOWNLOAD_PATH="$ARCHIVE_PATH.download"
 INSTALL_DIR="$ROOT_DIR/.tools/ollama"
 DOWNLOAD_URL="https://ollama.com/download/ollama-linux-amd64.tar.zst"
 
@@ -18,14 +19,24 @@ validate_archive() {
 }
 
 download_archive() {
+  rm -f "$DOWNLOAD_PATH"
+
   if command -v wget >/dev/null 2>&1; then
-    wget -c -O "$ARCHIVE_PATH" "$DOWNLOAD_URL"
+    wget --progress=dot:giga -O "$DOWNLOAD_PATH" "$DOWNLOAD_URL"
   elif command -v curl >/dev/null 2>&1; then
-    curl --http1.1 -fLo "$ARCHIVE_PATH" -C - "$DOWNLOAD_URL"
+    curl --http1.1 -fL --progress-bar -o "$DOWNLOAD_PATH" "$DOWNLOAD_URL"
   else
     echo "Neither wget nor curl is available to download Ollama." >&2
     exit 1
   fi
+
+  if ! zstd -t "$DOWNLOAD_PATH" >/dev/null; then
+    echo "Downloaded archive failed integrity validation. Removing it so the next run starts clean." >&2
+    rm -f "$DOWNLOAD_PATH"
+    exit 1
+  fi
+
+  mv "$DOWNLOAD_PATH" "$ARCHIVE_PATH"
 }
 
 if ! command -v zstd >/dev/null 2>&1; then
@@ -33,18 +44,19 @@ if ! command -v zstd >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -f "$ARCHIVE_PATH" ]] && ! validate_archive; then
-  echo "Existing archive is corrupted. Removing it and downloading a clean copy..." >&2
-  rm -f "$ARCHIVE_PATH"
+if [[ -f "$ARCHIVE_PATH" ]]; then
+  if validate_archive; then
+    echo "Using cached Ollama archive at $ARCHIVE_PATH"
+  else
+    echo "Existing archive is corrupted. Removing it and downloading a clean copy..." >&2
+    rm -f "$ARCHIVE_PATH"
+    download_archive
+  fi
+else
+  download_archive
 fi
 
-download_archive
-
-if ! validate_archive; then
-  echo "Downloaded archive failed integrity validation. Removing it so the next run starts clean." >&2
-  rm -f "$ARCHIVE_PATH"
-  exit 1
-fi
+rm -f "$DOWNLOAD_PATH"
 
 rm -rf "$INSTALL_DIR/bin" "$INSTALL_DIR/lib"
 tar --use-compress-program=unzstd -xf "$ARCHIVE_PATH" -C "$INSTALL_DIR"

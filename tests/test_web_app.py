@@ -8,8 +8,10 @@ from unittest.mock import Mock, patch
 
 from offerquest.web.app import (
     AUTO_PORT,
+    OllamaJobStore,
     format_workbench_url,
     main,
+    normalize_progress,
     parse_port_argument,
     resolve_port,
     validate_required_form_fields,
@@ -48,6 +50,27 @@ class WebAppTests(unittest.TestCase):
         )
 
         self.assertEqual(error, "Jobs file and Output path are required.")
+
+    def test_normalize_progress_clamps_to_percentage_bounds(self) -> None:
+        self.assertEqual(normalize_progress(-10), 0)
+        self.assertEqual(normalize_progress(42.4), 42)
+        self.assertEqual(normalize_progress(120), 100)
+
+    def test_ollama_job_store_tracks_progress_updates(self) -> None:
+        store = OllamaJobStore()
+        job_id = store.create(
+            intent="download_runtime",
+            base_url="http://localhost:11434",
+            custom_model=None,
+        )
+
+        store.update(job_id, status="running", progress=47, message="Downloading")
+        job = store.get(job_id)
+
+        self.assertIsNotNone(job)
+        self.assertEqual(job["status"], "running")
+        self.assertEqual(job["progress"], 47)
+        self.assertEqual(job["message"], "Downloading")
 
     def test_main_uses_auto_port_and_prints_launch_url(self) -> None:
         output = io.StringIO()
@@ -144,8 +167,19 @@ class WebAppTests(unittest.TestCase):
                     "status_css_class": "status-chip--muted",
                     "status_summary": "The Ollama CLI is available, but the server is not reachable yet.",
                     "can_pull_models": False,
+                    "can_install_runtime": True,
+                    "has_local_runtime": False,
+                    "can_restart_server": True,
+                    "managed_server": {"running": False, "pid": None, "log_path": "log", "pid_path": "pid"},
+                    "managed_server_button_label": "Start Managed Server",
+                    "hardware_status": {
+                        "summary": "NVIDIA GPU detected.",
+                        "detail": "Driver needs attention.",
+                        "devices": [],
+                    },
                     "error": None,
                     "result": None,
+                    "action_result": None,
                     "serve_command": "offerquest ollama serve",
                     "pull_command": "offerquest ollama pull",
                     "models_command": "offerquest ollama models",
@@ -156,6 +190,56 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Ollama Setup", response.text)
         self.assertIn("offerquest ollama serve", response.text)
+        self.assertIn("Download Local Ollama", response.text)
+        self.assertIn("Start Managed Server", response.text)
+        self.assertIn("Downloading local Ollama runtime", response.text)
+        self.assertIn("id=\"ollama-progress\"", response.text)
+        self.assertIn("role=\"progressbar\"", response.text)
+
+    def test_ollama_setup_page_renders_with_legacy_view_payload(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            with patch(
+                "offerquest.web.app.build_ollama_setup_view",
+                return_value={
+                    "selected_base_url": "http://localhost:11434",
+                    "custom_model": "",
+                    "ollama_status": {
+                        "reachable": False,
+                        "command_available": True,
+                        "command_source": "repo_local_wrapper",
+                    },
+                    "installed_models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                    "recommended_models": ["qwen3:8b"],
+                    "stretch_models": ["mistral-small"],
+                    "status_label": "Server Offline",
+                    "status_css_class": "status-chip--muted",
+                    "status_summary": "The Ollama CLI is available, but the server is not reachable yet.",
+                    "can_pull_models": False,
+                    "error": None,
+                    "result": None,
+                    "serve_command": "offerquest ollama serve",
+                    "pull_command": "offerquest ollama pull",
+                    "models_command": "offerquest ollama models",
+                },
+            ):
+                response = client.get("/ollama")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Managed server", response.text)
+        self.assertIn("Hardware detection will appear after the workbench reloads.", response.text)
+        self.assertIn("Buttons are waiting for a workbench restart.", response.text)
 
     def test_ollama_setup_submit_pulls_recommended_models(self) -> None:
         try:
@@ -195,8 +279,22 @@ class WebAppTests(unittest.TestCase):
                 "status_css_class": "status-chip--live",
                 "status_summary": "1 installed model(s) ready for use.",
                 "can_pull_models": True,
+                "can_install_runtime": True,
+                "has_local_runtime": True,
+                "can_restart_server": True,
+                "managed_server": {"running": True, "pid": 1234, "log_path": "log", "pid_path": "pid"},
+                "managed_server_button_label": "Restart Managed Server",
+                "hardware_status": {
+                    "summary": "NVIDIA GPU detected.",
+                    "detail": "Ready",
+                    "devices": [],
+                },
                 "error": None,
                 "result": pull_result,
+                "action_result": {
+                    "title": "Models pulled",
+                    "details": ["Pulled models: qwen3:8b"],
+                },
                 "serve_command": "offerquest ollama serve",
                 "pull_command": "offerquest ollama pull",
                 "models_command": "offerquest ollama models",
@@ -220,7 +318,154 @@ class WebAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(pull_mock.call_args.kwargs["models"], ["qwen3:8b", "gemma3:12b", "qwen3:14b"])
-        self.assertIn("Pulled models:", response.text)
+        self.assertIn("Models pulled", response.text)
+
+    def test_ollama_setup_submit_downloads_local_runtime(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            response_view = {
+                "selected_base_url": "http://localhost:11434",
+                "custom_model": "",
+                "ollama_status": {
+                    "reachable": False,
+                    "command_available": True,
+                    "command_source": "repo_local_wrapper",
+                },
+                "installed_models": [],
+                "missing_recommended_models": ["qwen3:8b"],
+                "recommended_models": ["qwen3:8b"],
+                "stretch_models": ["gpt-oss:20b", "mistral-small"],
+                "status_label": "Server Offline",
+                "status_css_class": "status-chip--muted",
+                "status_summary": "The Ollama CLI is available, but the server is not reachable yet.",
+                "can_pull_models": False,
+                "can_install_runtime": True,
+                "has_local_runtime": True,
+                "can_restart_server": True,
+                "managed_server": {"running": False, "pid": None, "log_path": "log", "pid_path": "pid"},
+                "managed_server_button_label": "Start Managed Server",
+                "hardware_status": {
+                    "summary": "NVIDIA GPU detected.",
+                    "detail": "Ready",
+                    "devices": [],
+                },
+                "error": None,
+                "result": None,
+                "action_result": {
+                    "title": "Local Ollama runtime downloaded",
+                    "details": ["Runtime path: /tmp/ollama"],
+                },
+                "serve_command": "offerquest ollama serve",
+                "pull_command": "offerquest ollama pull",
+                "models_command": "offerquest ollama models",
+            }
+
+            with patch(
+                "offerquest.web.app.run_local_ollama_runtime_install",
+                return_value={
+                    "command_source": "repo_local_wrapper",
+                    "local_runtime_path": "/tmp/ollama",
+                },
+            ) as install_mock:
+                with patch(
+                    "offerquest.web.app.build_ollama_setup_view",
+                    return_value=response_view,
+                ):
+                    response = client.post(
+                        "/ollama",
+                        data={
+                            "intent": "download_runtime",
+                            "base_url": "http://localhost:11434",
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(install_mock.called)
+        self.assertIn("Local Ollama runtime downloaded", response.text)
+
+    def test_ollama_setup_submit_restarts_managed_server(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            response_view = {
+                "selected_base_url": "http://localhost:11434",
+                "custom_model": "",
+                "ollama_status": {
+                    "reachable": True,
+                    "command_available": True,
+                    "command_source": "repo_local_wrapper",
+                },
+                "installed_models": ["qwen3:8b"],
+                "missing_recommended_models": [],
+                "recommended_models": ["qwen3:8b"],
+                "stretch_models": ["gpt-oss:20b", "mistral-small"],
+                "status_label": "Ready",
+                "status_css_class": "status-chip--live",
+                "status_summary": "1 installed model(s) ready for use.",
+                "can_pull_models": True,
+                "can_install_runtime": True,
+                "has_local_runtime": True,
+                "can_restart_server": True,
+                "managed_server": {"running": True, "pid": 4321, "log_path": "log", "pid_path": "pid"},
+                "managed_server_button_label": "Restart Managed Server",
+                "hardware_status": {
+                    "summary": "NVIDIA GPU detected.",
+                    "detail": "Ready",
+                    "devices": [],
+                },
+                "error": None,
+                "result": None,
+                "action_result": {
+                    "title": "Managed Ollama server restarted",
+                    "details": ["Managed PID: 4321"],
+                },
+                "serve_command": "offerquest ollama serve",
+                "pull_command": "offerquest ollama pull",
+                "models_command": "offerquest ollama models",
+            }
+
+            with patch(
+                "offerquest.web.app.run_ollama_server_restart",
+                return_value={
+                    "base_url": "http://localhost:11434",
+                    "pid": 4321,
+                    "restarted_existing": True,
+                },
+            ) as restart_mock:
+                with patch(
+                    "offerquest.web.app.build_ollama_setup_view",
+                    return_value=response_view,
+                ):
+                    response = client.post(
+                        "/ollama",
+                        data={
+                            "intent": "restart_server",
+                            "base_url": "http://localhost:11434",
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(restart_mock.call_args.kwargs["base_url"], "http://localhost:11434")
+        self.assertIn("Managed Ollama server restarted", response.text)
 
     def test_dashboard_route_shows_start_here_checklist_for_empty_workspace(self) -> None:
         try:

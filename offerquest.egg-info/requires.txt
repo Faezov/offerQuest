@@ -2,6 +2,9 @@
 [dev]
 pytest>=8.0
 
+[release]
+build>=1.2.2
+
 [web]
 fastapi>=0.115
 jinja2>=3.1

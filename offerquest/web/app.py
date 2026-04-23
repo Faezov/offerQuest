@@ -7,6 +7,7 @@ from typing import Any
 
 from .. import config as _config
 from ..errors import OfferQuestError
+from ..ollama import DEFAULT_OLLAMA_BASE_URL
 from ..workspace import ProjectState
 from ..workbench import (
     build_artifact_preview,
@@ -15,6 +16,7 @@ from ..workbench import (
     build_dashboard_view,
     build_job_sources_view,
     build_latest_rankings_view,
+    build_ollama_setup_view,
     build_profile_form_view,
     build_rerank_jobs_form_view,
     build_resume_tailored_draft_form_view,
@@ -27,6 +29,7 @@ from ..workbench import (
     run_job_source_delete,
     run_job_source_save,
     run_job_source_toggle,
+    run_ollama_models_pull,
     run_profile_build,
     run_refresh_jobs_build,
     run_rerank_jobs_build,
@@ -111,6 +114,18 @@ def normalize_display_host(host: str) -> str:
     return host
 
 
+def safe_request_url_for(
+    request: Any,
+    route_name: str,
+    *,
+    fallback: str,
+) -> str:
+    try:
+        return str(request.url_for(route_name))
+    except Exception:
+        return fallback
+
+
 def create_app(
     *,
     workspace_root: str | Path | None = None,
@@ -148,6 +163,11 @@ def create_app(
         base_context = {
             "request": request,
             "workspace_root": str(project_state.root),
+            "ollama_setup_href": safe_request_url_for(
+                request,
+                "ollama_setup",
+                fallback="/ollama",
+            ),
         }
         return templates.TemplateResponse(
             request,
@@ -210,6 +230,23 @@ def create_app(
                     project_state,
                     edit_source_index=edit_source,
                     duplicate_source_index=duplicate_source,
+                ),
+            },
+        )
+
+    @app.get("/ollama", response_class=HTMLResponse)
+    async def ollama_setup(
+        request: Request,
+        base_url: str | None = None,
+    ) -> HTMLResponse:
+        return render(
+            request,
+            "ollama_setup.html",
+            {
+                "page_title": "Ollama Setup",
+                "view": build_ollama_setup_view(
+                    project_state,
+                    base_url=base_url,
                 ),
             },
         )
@@ -606,6 +643,79 @@ def create_app(
                         credentials_result=result,
                     ),
                 },
+        )
+
+    @app.post("/ollama", response_class=HTMLResponse)
+    async def ollama_setup_submit(request: Request) -> HTMLResponse:
+        form = await request.form()
+        intent = str(form.get("intent") or "refresh_status").strip()
+        base_url = str(form.get("base_url") or "").strip() or None
+        custom_model = str(form.get("custom_model") or "").strip() or None
+
+        if intent == "refresh_status":
+            return render(
+                request,
+                "ollama_setup.html",
+                {
+                    "page_title": "Ollama Setup",
+                    "view": build_ollama_setup_view(
+                        project_state,
+                        base_url=base_url,
+                        custom_model=custom_model,
+                    ),
+                },
+            )
+
+        try:
+            if intent == "pull_recommended":
+                models = list(build_ollama_setup_view(project_state, base_url=base_url)["recommended_models"])
+            elif intent == "pull_missing_recommended":
+                current_view = build_ollama_setup_view(
+                    project_state,
+                    base_url=base_url,
+                    custom_model=custom_model,
+                )
+                models = list(current_view["missing_recommended_models"])
+                if not models:
+                    raise ValueError("All recommended models are already installed.")
+            elif intent == "pull_custom":
+                if not custom_model:
+                    raise ValueError("Custom model name is required.")
+                models = [custom_model]
+            else:
+                raise ValueError("Unknown Ollama setup action.")
+
+            result = run_ollama_models_pull(
+                base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
+                models=models,
+            )
+        except (ValueError, OfferQuestError) as exc:
+            return render(
+                request,
+                "ollama_setup.html",
+                {
+                    "page_title": "Ollama Setup",
+                    "view": build_ollama_setup_view(
+                        project_state,
+                        base_url=base_url,
+                        custom_model=custom_model,
+                        error=str(exc),
+                    ),
+                },
+            )
+
+        return render(
+            request,
+            "ollama_setup.html",
+            {
+                "page_title": "Ollama Setup",
+                "view": build_ollama_setup_view(
+                    project_state,
+                    base_url=base_url,
+                    custom_model=custom_model,
+                    result=result,
+                ),
+            },
         )
 
     @app.post("/rerank-jobs/new", response_class=HTMLResponse)

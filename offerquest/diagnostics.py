@@ -308,20 +308,40 @@ def build_ollama_check(
         ollama_base_url,
         timeout_seconds=timeout_seconds,
     )
+    if not status.get("command_available") and not status.get("reachable"):
+        return make_check(
+            key="ollama",
+            title="Ollama",
+            status="warn",
+            blocking=False,
+            summary="Ollama CLI was not found, and no Ollama server is reachable.",
+            next_step="Install Ollama first, then run `offerquest ollama serve` and `offerquest ollama pull`.",
+            detail="OfferQuest can still run non-LLM workflows without Ollama.",
+        )
+
     if status.get("reachable"):
         models = status.get("models", [])
         model_names = [str(model.get("name")) for model in models if model.get("name")]
-        detail = (
-            "Available models: " + ", ".join(model_names[:5]) + ("." if len(model_names) <= 5 else ", ...")
-            if model_names
-            else "The server is reachable, but no models were listed."
-        )
+        if not model_names:
+            return make_check(
+                key="ollama",
+                title="Ollama",
+                status="warn",
+                blocking=False,
+                summary=f"Ollama is reachable at `{ollama_base_url}`, but no models are installed yet.",
+                next_step="Pull a recommended model with `offerquest ollama pull`, then rerun `offerquest doctor`.",
+                detail="OfferQuest cover-letter LLM workflows need at least one installed model.",
+            )
+
+        detail = "Available models: " + ", ".join(model_names[:5]) + ("." if len(model_names) <= 5 else ", ...")
+        if status.get("missing_recommended_models"):
+            detail += " Missing recommended models: " + ", ".join(status["missing_recommended_models"]) + "."
         return make_check(
             key="ollama",
             title="Ollama",
             status="ok",
             blocking=False,
-            summary=f"Ollama is reachable at `{ollama_base_url}`.",
+            summary=f"Ollama is reachable at `{ollama_base_url}` and has {len(model_names)} installed model(s).",
             detail=detail,
         )
 
@@ -330,8 +350,8 @@ def build_ollama_check(
         title="Ollama",
         status="warn",
         blocking=False,
-        summary=f"Ollama is not reachable at `{ollama_base_url}`.",
-        next_step="Start Ollama locally before using the LLM cover-letter workflows, or skip those workflows for now.",
+        summary=f"Ollama is installed, but the server is not reachable at `{ollama_base_url}`.",
+        next_step="Start it with `offerquest ollama serve`, then pull a model with `offerquest ollama pull` if needed.",
         detail=str(status.get("error") or "The server did not respond."),
     )
 
@@ -365,7 +385,7 @@ def build_recommended_next_steps(
         )
     if check_map["ollama"]["status"] != "ok":
         steps.append(
-            "If you want LLM cover-letter drafts, start Ollama locally and pull at least one model first."
+            "If you want LLM cover-letter drafts, run `offerquest ollama serve` and then `offerquest ollama pull`."
         )
     return steps
 

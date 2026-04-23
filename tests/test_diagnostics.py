@@ -15,7 +15,14 @@ class DiagnosticsTests(unittest.TestCase):
             root = Path(tmpdir)
             init_workspace(root)
 
-            with patch("offerquest.diagnostics.get_ollama_status", return_value={"reachable": False, "error": "offline"}):
+            with patch(
+                "offerquest.diagnostics.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": True,
+                    "error": "offline",
+                },
+            ):
                 report = build_doctor_report(ProjectState.from_root(root))
 
         profile_check = next(
@@ -33,7 +40,14 @@ class DiagnosticsTests(unittest.TestCase):
             (root / "data" / "base-cover-letter.txt").write_text("cl", encoding="utf-8")
 
             with patch("offerquest.diagnostics.is_module_available", return_value=False):
-                with patch("offerquest.diagnostics.get_ollama_status", return_value={"reachable": False, "error": "offline"}):
+                with patch(
+                    "offerquest.diagnostics.get_ollama_status",
+                    return_value={
+                        "reachable": False,
+                        "command_available": True,
+                        "error": "offline",
+                    },
+                ):
                     report = build_doctor_report(ProjectState.from_root(root))
 
         web_check = next(check for check in report["checks"] if check["key"] == "web_dependencies")
@@ -54,7 +68,14 @@ class DiagnosticsTests(unittest.TestCase):
                     "path": str(root / "missing.env"),
                 },
             ):
-                with patch("offerquest.diagnostics.get_ollama_status", return_value={"reachable": False, "error": "offline"}):
+                with patch(
+                    "offerquest.diagnostics.get_ollama_status",
+                    return_value={
+                        "reachable": False,
+                        "command_available": True,
+                        "error": "offline",
+                    },
+                ):
                     report = build_doctor_report(ProjectState.from_root(root))
 
         adzuna_check = next(check for check in report["checks"] if check["key"] == "adzuna_credentials")
@@ -72,6 +93,7 @@ class DiagnosticsTests(unittest.TestCase):
                 "offerquest.diagnostics.get_ollama_status",
                 return_value={
                     "reachable": False,
+                    "command_available": True,
                     "error": "connection refused",
                 },
             ):
@@ -79,15 +101,61 @@ class DiagnosticsTests(unittest.TestCase):
 
         ollama_check = next(check for check in report["checks"] if check["key"] == "ollama")
         self.assertEqual(ollama_check["status"], "warn")
-        self.assertIn("not reachable", ollama_check["summary"])
+        self.assertIn("installed", ollama_check["summary"])
         self.assertIn("connection refused", ollama_check["detail"])
+
+    def test_doctor_report_flags_missing_ollama_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            init_workspace(root)
+
+            with patch(
+                "offerquest.diagnostics.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": False,
+                    "error": "offline",
+                },
+            ):
+                report = build_doctor_report(ProjectState.from_root(root))
+
+        ollama_check = next(check for check in report["checks"] if check["key"] == "ollama")
+        self.assertEqual(ollama_check["status"], "warn")
+        self.assertIn("CLI was not found", ollama_check["summary"])
+
+    def test_doctor_report_flags_running_ollama_without_models(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            init_workspace(root)
+
+            with patch(
+                "offerquest.diagnostics.get_ollama_status",
+                return_value={
+                    "reachable": True,
+                    "command_available": True,
+                    "models": [],
+                    "missing_recommended_models": ["qwen3:8b"],
+                },
+            ):
+                report = build_doctor_report(ProjectState.from_root(root))
+
+        ollama_check = next(check for check in report["checks"] if check["key"] == "ollama")
+        self.assertEqual(ollama_check["status"], "warn")
+        self.assertIn("no models are installed", ollama_check["summary"])
 
     def test_render_doctor_report_is_human_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             init_workspace(root)
 
-            with patch("offerquest.diagnostics.get_ollama_status", return_value={"reachable": False, "error": "offline"}):
+            with patch(
+                "offerquest.diagnostics.get_ollama_status",
+                return_value={
+                    "reachable": False,
+                    "command_available": True,
+                    "error": "offline",
+                },
+            ):
                 report = build_doctor_report(ProjectState.from_root(root))
 
         rendered = render_doctor_report(report)

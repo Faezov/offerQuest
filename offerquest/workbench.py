@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .cover_letter import (
-    DEFAULT_OLLAMA_BASE_URL,
     generate_cover_letter_for_job_record,
     generate_cover_letter_for_job_record_llm,
     slugify,
@@ -22,6 +21,14 @@ from .jobs import (
     read_job_records,
     refresh_job_sources,
     write_adzuna_credentials_file,
+)
+from .ollama import (
+    DEFAULT_OLLAMA_BASE_URL,
+    RECOMMENDED_OLLAMA_MODELS,
+    STRETCH_OLLAMA_MODELS,
+    get_ollama_status,
+    run_ollama_cli,
+    select_default_ollama_model,
 )
 from .profile import build_candidate_profile, build_profile_from_files
 from .reranking import rerank_job_records
@@ -134,6 +141,13 @@ class SaveJobSourceConfigResult:
     action: str
     source_name: str
     source_count: int
+
+
+@dataclass(frozen=True)
+class PullOllamaModelsResult:
+    pulled_models: tuple[str, ...]
+    base_url: str
+    ollama_status: dict[str, Any]
 
 
 def build_dashboard_view(project_state: ProjectState) -> dict[str, Any]:
@@ -365,6 +379,47 @@ def build_job_sources_view(
     }
 
 
+def build_ollama_setup_view(
+    project_state: ProjectState,
+    *,
+    base_url: str | None = None,
+    custom_model: str | None = None,
+    error: str | None = None,
+    result: PullOllamaModelsResult | None = None,
+) -> dict[str, Any]:
+    del project_state
+    selected_base_url = base_url or DEFAULT_OLLAMA_BASE_URL
+    ollama_status = get_ollama_status(selected_base_url, timeout_seconds=2)
+    installed_models = [
+        str(model.get("name"))
+        for model in ollama_status.get("models", [])
+        if model.get("name")
+    ]
+    missing_recommended_models = list(
+        ollama_status.get("missing_recommended_models", list(RECOMMENDED_OLLAMA_MODELS))
+    )
+    status_label, status_css_class, status_summary = summarize_ollama_status(ollama_status)
+
+    return {
+        "selected_base_url": selected_base_url,
+        "custom_model": custom_model or "",
+        "ollama_status": ollama_status,
+        "installed_models": installed_models,
+        "missing_recommended_models": missing_recommended_models,
+        "recommended_models": list(RECOMMENDED_OLLAMA_MODELS),
+        "stretch_models": list(STRETCH_OLLAMA_MODELS),
+        "status_label": status_label,
+        "status_css_class": status_css_class,
+        "status_summary": status_summary,
+        "can_pull_models": bool(ollama_status.get("command_available")) and bool(ollama_status.get("reachable")),
+        "error": error,
+        "result": result,
+        "serve_command": "offerquest ollama serve",
+        "pull_command": "offerquest ollama pull",
+        "models_command": "offerquest ollama models",
+    }
+
+
 def build_cover_letter_form_view(
     project_state: ProjectState,
     *,
@@ -396,6 +451,7 @@ def build_cover_letter_form_view(
     )
     selected_jobs_file = jobs_file or select_default_jobs_file(jobs_files)
     selected_output = output_path or suggest_cover_letter_output_path(selected_job, draft_mode=selected_draft_mode)
+    ollama_state = build_ollama_form_state(llm_base_url)
 
     return {
         "ranking_sources": ranking_sources,
@@ -408,9 +464,17 @@ def build_cover_letter_form_view(
         "selected_base_cover_letter": selected_base_cover_letter,
         "selected_jobs_file": selected_jobs_file,
         "selected_output": selected_output,
-        "selected_llm_model": llm_model or "qwen3:8b",
+        "selected_llm_model": select_default_ollama_model(
+            ollama_state["status"],
+            explicit_model=llm_model,
+        ),
         "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
         "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
+        "ollama_status": ollama_state["status"],
+        "available_llm_models": ollama_state["available_models"],
+        "recommended_llm_models": list(RECOMMENDED_OLLAMA_MODELS),
+        "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
+        or not bool(ollama_state["available_models"]),
         "error": error,
         "result": result,
         "has_rankings": bool(ranking_sources),
@@ -444,6 +508,7 @@ def build_cover_letter_compare_view(
         jobs_file=jobs_file,
     )
     selected_job = selection["selected_job"]
+    ollama_state = build_ollama_form_state(llm_base_url)
 
     return {
         **selection,
@@ -451,9 +516,17 @@ def build_cover_letter_compare_view(
         or suggest_cover_letter_output_path(selected_job, draft_mode="rule_based"),
         "selected_llm_output": llm_output_path
         or suggest_cover_letter_output_path(selected_job, draft_mode="llm"),
-        "selected_llm_model": llm_model or "qwen3:8b",
+        "selected_llm_model": select_default_ollama_model(
+            ollama_state["status"],
+            explicit_model=llm_model,
+        ),
         "selected_llm_base_url": llm_base_url or DEFAULT_OLLAMA_BASE_URL,
         "selected_llm_timeout_seconds": llm_timeout_seconds or "180",
+        "ollama_status": ollama_state["status"],
+        "available_llm_models": ollama_state["available_models"],
+        "recommended_llm_models": list(RECOMMENDED_OLLAMA_MODELS),
+        "ollama_needs_setup": not bool(ollama_state["status"].get("reachable"))
+        or not bool(ollama_state["available_models"]),
         "error": error,
         "result": result,
     }
@@ -639,6 +712,41 @@ def run_adzuna_credentials_save(
         credentials_path_display=format_user_path(credentials_path),
         saved_app_id_masked=saved_status.get("saved_app_id_masked"),
         saved_app_key_masked=saved_status.get("saved_app_key_masked"),
+    )
+
+
+def run_ollama_models_pull(
+    *,
+    base_url: str,
+    models: list[str],
+) -> PullOllamaModelsResult:
+    normalized_models = []
+    for model in models:
+        normalized_model = str(model or "").strip()
+        if normalized_model and normalized_model not in normalized_models:
+            normalized_models.append(normalized_model)
+
+    if not normalized_models:
+        raise ValueError("Select at least one Ollama model to pull.")
+
+    status = get_ollama_status(base_url, timeout_seconds=2)
+    if not status.get("command_available"):
+        raise ValueError(
+            "Ollama CLI was not found. Install Ollama first, then try pulling models again."
+        )
+    if not status.get("reachable"):
+        raise ValueError(
+            "Ollama server is not reachable. Start it with `offerquest ollama serve` first."
+        )
+
+    for model in normalized_models:
+        run_ollama_cli(["pull", model], capture_output=True)
+
+    refreshed_status = get_ollama_status(base_url, timeout_seconds=2)
+    return PullOllamaModelsResult(
+        pulled_models=tuple(normalized_models),
+        base_url=base_url,
+        ollama_status=refreshed_status,
     )
 
 
@@ -1329,6 +1437,46 @@ def build_cover_letter_selection_context(
         "has_jobs_files": bool(jobs_files),
         "has_documents": bool(documents),
     }
+
+
+def build_ollama_form_state(llm_base_url: str | None) -> dict[str, Any]:
+    base_url = llm_base_url or DEFAULT_OLLAMA_BASE_URL
+    status = get_ollama_status(base_url, timeout_seconds=1)
+    available_models = [
+        str(model.get("name"))
+        for model in status.get("models", [])
+        if model.get("name")
+    ]
+    return {
+        "status": status,
+        "available_models": available_models,
+    }
+
+
+def summarize_ollama_status(status: dict[str, Any]) -> tuple[str, str, str]:
+    if not status.get("command_available") and not status.get("reachable"):
+        return (
+            "CLI Missing",
+            "status-chip--muted",
+            "Install Ollama first to enable local LLM workflows.",
+        )
+    if not status.get("reachable"):
+        return (
+            "Server Offline",
+            "status-chip--muted",
+            "The Ollama CLI is available, but the server is not reachable yet.",
+        )
+    if not status.get("has_models"):
+        return (
+            "Ready for First Pull",
+            "status-chip--warning",
+            "The server is reachable, but no models are installed yet.",
+        )
+    return (
+        "Ready",
+        "status-chip--live",
+        f"{len(status.get('models', []))} installed model(s) ready for use.",
+    )
 
 
 def select_default_document(documents: list[str], *, preferred_terms: list[str]) -> str | None:

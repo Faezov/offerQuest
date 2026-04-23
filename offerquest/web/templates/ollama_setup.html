@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="panel-grid panel-grid--metrics">
+    <article class="metric-card">
+      <p class="metric-card__label">Status</p>
+      <p class="metric-card__value">{{ view.status_label }}</p>
+    </article>
+    <article class="metric-card">
+      <p class="metric-card__label">Installed Models</p>
+      <p class="metric-card__value">{{ view.installed_models | length }}</p>
+    </article>
+    <article class="metric-card">
+      <p class="metric-card__label">Missing Recommended</p>
+      <p class="metric-card__value">{{ view.missing_recommended_models | length }}</p>
+    </article>
+  </section>
+
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Connection Status</h2>
+        <p>Check whether the local Ollama server is reachable and whether it already has models installed.</p>
+      </div>
+
+      {% if view.error %}
+        <div class="callout callout--error">
+          <p>{{ view.error }}</p>
+        </div>
+      {% endif %}
+
+      {% if view.result %}
+        <div class="callout">
+          <p><strong>Pulled models:</strong> {{ view.result.pulled_models | join(", ") }}</p>
+          <p><strong>Installed models now:</strong> {{ view.result.ollama_status.models | length }}</p>
+        </div>
+      {% endif %}
+
+      <form method="get" class="form-stack">
+        <label class="field">
+          <span>Base URL</span>
+          <input type="text" name="base_url" value="{{ view.selected_base_url }}">
+        </label>
+        <button class="secondary-button" type="submit">Refresh Status</button>
+      </form>
+
+      <div class="callout">
+        <p><strong>Summary:</strong> {{ view.status_summary }}</p>
+      </div>
+
+      <dl class="detail-grid">
+        <div>
+          <dt>CLI available</dt>
+          <dd>{{ "Yes" if view.ollama_status.command_available else "No" }}</dd>
+        </div>
+        <div>
+          <dt>Server reachable</dt>
+          <dd>{{ "Yes" if view.ollama_status.reachable else "No" }}</dd>
+        </div>
+        <div>
+          <dt>Base URL</dt>
+          <dd><code>{{ view.selected_base_url }}</code></dd>
+        </div>
+        <div>
+          <dt>Command source</dt>
+          <dd>{{ view.ollama_status.command_source or "Not detected" }}</dd>
+        </div>
+      </dl>
+
+      {% if view.ollama_status.error %}
+        <div class="empty-state compact">
+          <p>{{ view.ollama_status.error }}</p>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Local Commands</h2>
+        <p>OfferQuest can manage model pulls for you from this page, but starting the server still works best from the terminal.</p>
+      </div>
+
+      <div class="advice-stack">
+        <div class="advice-card">
+          <p class="advice-card__eyebrow">Start server</p>
+          <h3><code>{{ view.serve_command }}</code></h3>
+          <p>Run this once in a terminal, then refresh this page so OfferQuest can see the server.</p>
+        </div>
+
+        <div class="advice-card">
+          <p class="advice-card__eyebrow">List models</p>
+          <h3><code>{{ view.models_command }}</code></h3>
+          <p>Use this when you want the terminal view of installed models.</p>
+        </div>
+
+        <div class="advice-card">
+          <p class="advice-card__eyebrow">Recommended pull</p>
+          <h3><code>{{ view.pull_command }}</code></h3>
+          <p>This pulls OfferQuest's recommended model set for local cover-letter workflows.</p>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Recommended Models</h2>
+        <p>These are the default models OfferQuest prefers for local LLM cover-letter drafting.</p>
+      </div>
+
+      <ul class="token-list">
+        {% for model_name in view.recommended_models %}
+          <li>{{ model_name }}</li>
+        {% endfor %}
+      </ul>
+
+      {% if view.missing_recommended_models %}
+        <div class="callout">
+          <p><strong>Still missing:</strong> {{ view.missing_recommended_models | join(", ") }}</p>
+        </div>
+      {% else %}
+        <div class="callout">
+          <p>All recommended models are already installed.</p>
+        </div>
+      {% endif %}
+
+      <div class="button-row">
+        <form method="post" class="inline-form">
+          <input type="hidden" name="intent" value="pull_recommended">
+          <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
+          <button class="primary-button" type="submit" {% if not view.can_pull_models %}disabled{% endif %}>Pull Recommended Models</button>
+        </form>
+
+        <form method="post" class="inline-form">
+          <input type="hidden" name="intent" value="pull_missing_recommended">
+          <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
+          <button class="secondary-button" type="submit" {% if not view.can_pull_models or not view.missing_recommended_models %}disabled{% endif %}>Pull Only Missing Recommended</button>
+        </form>
+      </div>
+    </article>
+
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Custom Model</h2>
+        <p>Use this if you want to pull something outside the recommended set.</p>
+      </div>
+
+      <form method="post" class="form-stack">
+        <input type="hidden" name="intent" value="pull_custom">
+        <input type="hidden" name="base_url" value="{{ view.selected_base_url }}">
+        <label class="field">
+          <span>Custom model name</span>
+          <input type="text" name="custom_model" value="{{ view.custom_model }}" placeholder="qwen3:8b">
+        </label>
+        <button class="secondary-button" type="submit" {% if not view.can_pull_models %}disabled{% endif %}>Pull Custom Model</button>
+      </form>
+
+      <div class="subsection">
+        <h3>Stretch Models</h3>
+        <ul class="token-list">
+          {% for model_name in view.stretch_models %}
+            <li>{{ model_name }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel__header">
+      <h2>Installed Models</h2>
+      <p>These are the models OfferQuest can use right now.</p>
+    </div>
+
+    {% if view.installed_models %}
+      <ul class="strip-list">
+        {% for model_name in view.installed_models %}
+          <li>
+            <span>{{ model_name }}</span>
+            <strong>Installed</strong>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state">
+        <h3>No models installed yet</h3>
+        <p>Start the Ollama server and pull at least one model before using the LLM draft flows.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -15,16 +15,13 @@ from .profile import build_candidate_profile, looks_like_location_line
 from .scoring import infer_job_title
 
 
-def generate_cover_letter_for_job_file(
+def _load_cover_letter_inputs(
     cv_path: str | Path,
-    job_path: str | Path,
-    *,
-    base_cover_letter_path: str | Path | None = None,
-) -> dict:
+    job_text: str,
+    base_cover_letter_path: str | Path | None,
+) -> tuple[str, dict, dict]:
     cv_text = read_document_text(cv_path)
-    job_text = read_document_text(job_path)
     base_cover_letter_text = read_optional_text(base_cover_letter_path)
-
     profile = build_candidate_profile(cv_text, base_cover_letter_text)
     validate_cover_letter_profile(profile)
     ats_report = build_ats_report(
@@ -33,7 +30,25 @@ def generate_cover_letter_for_job_file(
         cv_path=str(cv_path),
         cover_letter_text=base_cover_letter_text,
     )
+    return base_cover_letter_text, profile, ats_report
 
+
+def _job_context_from_record(job_record: dict, job_text: str) -> dict:
+    return {
+        "job_title": job_record.get("title") or infer_job_title(job_text),
+        "company": job_record.get("company"),
+        "location": job_record.get("location"),
+    }
+
+
+def generate_cover_letter_for_job_file(
+    cv_path: str | Path,
+    job_path: str | Path,
+    *,
+    base_cover_letter_path: str | Path | None = None,
+) -> dict:
+    job_text = read_document_text(job_path)
+    _, profile, ats_report = _load_cover_letter_inputs(cv_path, job_text, base_cover_letter_path)
     job_context = infer_job_context(job_text)
     cover_letter_text = build_cover_letter_text(
         profile=profile,
@@ -58,24 +73,9 @@ def generate_cover_letter_for_job_record(
     *,
     base_cover_letter_path: str | Path | None = None,
 ) -> dict:
-    cv_text = read_document_text(cv_path)
-    base_cover_letter_text = read_optional_text(base_cover_letter_path)
-    profile = build_candidate_profile(cv_text, base_cover_letter_text)
-    validate_cover_letter_profile(profile)
     job_text = job_record_to_text(job_record)
-
-    ats_report = build_ats_report(
-        cv_text,
-        job_text,
-        cv_path=str(cv_path),
-        cover_letter_text=base_cover_letter_text,
-    )
-
-    job_context = {
-        "job_title": job_record.get("title") or infer_job_title(job_text),
-        "company": job_record.get("company"),
-        "location": job_record.get("location"),
-    }
+    _, profile, ats_report = _load_cover_letter_inputs(cv_path, job_text, base_cover_letter_path)
+    job_context = _job_context_from_record(job_record, job_text)
     cover_letter_text = build_cover_letter_text(
         profile=profile,
         ats_report=ats_report,
@@ -105,25 +105,12 @@ def generate_cover_letter_for_job_record_llm(
     base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: int = 180,
 ) -> dict:
-    cv_text = read_document_text(cv_path)
-    base_cover_letter_text = read_optional_text(base_cover_letter_path)
-    employer_context_text = read_optional_text(employer_context_path)
-    profile = build_candidate_profile(cv_text, base_cover_letter_text)
-    validate_cover_letter_profile(profile)
     job_text = job_record_to_text(job_record)
-
-    ats_report = build_ats_report(
-        cv_text,
-        job_text,
-        cv_path=str(cv_path),
-        cover_letter_text=base_cover_letter_text,
+    base_cover_letter_text, profile, ats_report = _load_cover_letter_inputs(
+        cv_path, job_text, base_cover_letter_path
     )
-
-    job_context = {
-        "job_title": job_record.get("title") or infer_job_title(job_text),
-        "company": job_record.get("company"),
-        "location": job_record.get("location"),
-    }
+    employer_context_text = read_optional_text(employer_context_path)
+    job_context = _job_context_from_record(job_record, job_text)
     llm_payload = build_cover_letter_with_ollama(
         profile=profile,
         ats_report=ats_report,

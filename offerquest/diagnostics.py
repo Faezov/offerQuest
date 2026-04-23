@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,7 @@ def render_doctor_report(report: dict[str, Any]) -> str:
 
 
 def build_workspace_layout_check(project_state: ProjectState) -> dict[str, Any]:
+    check = partial(make_check, key="workspace_layout", title="Workspace layout", blocking=True)
     missing_paths = [
         name
         for name, path in (
@@ -98,11 +100,8 @@ def build_workspace_layout_check(project_state: ProjectState) -> dict[str, Any]:
     ]
 
     if missing_paths:
-        return make_check(
-            key="workspace_layout",
-            title="Workspace layout",
+        return check(
             status="warn",
-            blocking=True,
             summary=(
                 "This workspace is missing the standard OfferQuest folders: "
                 + ", ".join(missing_paths)
@@ -113,17 +112,15 @@ def build_workspace_layout_check(project_state: ProjectState) -> dict[str, Any]:
             detail="OfferQuest expects separate `data/`, `jobs/`, and `outputs/` folders for source files and generated artifacts.",
         )
 
-    return make_check(
-        key="workspace_layout",
-        title="Workspace layout",
+    return check(
         status="ok",
-        blocking=True,
         summary="The standard OfferQuest folders are present.",
         detail="`data/`, `jobs/`, and `outputs/` are ready for use.",
     )
 
 
 def build_profile_sources_check(project_state: ProjectState) -> dict[str, Any]:
+    check = partial(make_check, key="profile_sources", title="Profile source documents", blocking=True)
     documents = list_workspace_documents(project_state)
     cv_candidate = choose_document(documents, preferred_terms=("cv", "resume"))
     cover_letter_candidate = choose_document(
@@ -132,11 +129,8 @@ def build_profile_sources_check(project_state: ProjectState) -> dict[str, Any]:
     )
 
     if cv_candidate and cover_letter_candidate:
-        return make_check(
-            key="profile_sources",
-            title="Profile source documents",
+        return check(
             status="ok",
-            blocking=True,
             summary=(
                 f"Found {len(documents)} profile source file(s), including a default CV and cover letter."
             ),
@@ -151,11 +145,8 @@ def build_profile_sources_check(project_state: ProjectState) -> dict[str, Any]:
     if not cover_letter_candidate:
         missing_labels.append("cover letter")
 
-    return make_check(
-        key="profile_sources",
-        title="Profile source documents",
+    return check(
         status="warn",
-        blocking=True,
         summary=(
             "Missing "
             + " and ".join(missing_labels)
@@ -174,13 +165,11 @@ def build_profile_sources_check(project_state: ProjectState) -> dict[str, Any]:
 
 
 def build_job_sources_check(project_state: ProjectState) -> dict[str, Any]:
+    check = partial(make_check, key="job_sources", title="Job source config", blocking=True)
     config_path = project_state.jobs_dir / "sources.json"
     if not config_path.exists():
-        return make_check(
-            key="job_sources",
-            title="Job source config",
+        return check(
             status="warn",
-            blocking=True,
             summary="`jobs/sources.json` is missing.",
             next_step=(
                 f"Run `offerquest init-workspace --path {project_state.root}` or create `jobs/sources.json` manually."
@@ -191,31 +180,22 @@ def build_job_sources_check(project_state: ProjectState) -> dict[str, Any]:
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
     except OSError:
-        return make_check(
-            key="job_sources",
-            title="Job source config",
+        return check(
             status="warn",
-            blocking=True,
             summary="`jobs/sources.json` could not be read.",
             next_step="Check file permissions and try `offerquest doctor` again.",
         )
     except json.JSONDecodeError:
-        return make_check(
-            key="job_sources",
-            title="Job source config",
+        return check(
             status="warn",
-            blocking=True,
             summary="`jobs/sources.json` is not valid JSON.",
             next_step="Fix the JSON syntax or recreate the file with `offerquest init-workspace --path ... --force`.",
         )
 
     sources = payload.get("sources", [])
     if not isinstance(sources, list):
-        return make_check(
-            key="job_sources",
-            title="Job source config",
+        return check(
             status="warn",
-            blocking=True,
             summary="`jobs/sources.json` must contain a `sources` list.",
             next_step="Update the config schema so `sources` is a JSON array of job source objects.",
         )
@@ -224,60 +204,47 @@ def build_job_sources_check(project_state: ProjectState) -> dict[str, Any]:
         1 for source in sources if isinstance(source, dict) and source.get("enabled", True) is not False
     )
     if not sources:
-        return make_check(
-            key="job_sources",
-            title="Job source config",
+        return check(
             status="warn",
-            blocking=True,
             summary="`jobs/sources.json` exists, but no job sources are configured yet.",
             next_step="Add at least one manual, Greenhouse, or Adzuna source before refreshing jobs.",
         )
 
-    return make_check(
-        key="job_sources",
-        title="Job source config",
+    return check(
         status="ok",
-        blocking=True,
         summary=f"Found {len(sources)} configured job source(s), {enabled_count} enabled.",
         detail="You can edit sources in `jobs/sources.json` or from the workbench Job Sources page.",
     )
 
 
 def build_web_dependencies_check() -> dict[str, Any]:
+    check = partial(make_check, key="web_dependencies", title="Web workbench dependencies", blocking=False)
     missing_packages = [
         display_name
         for module_name, display_name in WEB_DEPENDENCY_MODULES
         if not is_module_available(module_name)
     ]
     if missing_packages:
-        return make_check(
-            key="web_dependencies",
-            title="Web workbench dependencies",
+        return check(
             status="warn",
-            blocking=False,
             summary="The optional web workbench dependencies are not fully installed.",
             next_step="Install them with `pip install -e .[web]` before using `offerquest-workbench`.",
             detail="Missing packages: " + ", ".join(missing_packages) + ".",
         )
 
-    return make_check(
-        key="web_dependencies",
-        title="Web workbench dependencies",
+    return check(
         status="ok",
-        blocking=False,
         summary="FastAPI, Jinja2, python-multipart, and Uvicorn are available.",
     )
 
 
 def build_adzuna_credentials_check() -> dict[str, Any]:
+    check = partial(make_check, key="adzuna_credentials", title="Adzuna credentials", blocking=False)
     credentials = load_adzuna_credentials_status()
     if credentials.get("has_effective_credentials"):
         source = credentials.get("effective_source") or "credentials"
-        return make_check(
-            key="adzuna_credentials",
-            title="Adzuna credentials",
+        return check(
             status="ok",
-            blocking=False,
             summary=f"Adzuna credentials are available from `{source}`.",
             detail=(
                 f"Credentials file: `{credentials['path']}`."
@@ -286,11 +253,8 @@ def build_adzuna_credentials_check() -> dict[str, Any]:
             ),
         )
 
-    return make_check(
-        key="adzuna_credentials",
-        title="Adzuna credentials",
+    return check(
         status="warn",
-        blocking=False,
         summary="No Adzuna credentials were found in the environment or saved credentials file.",
         next_step=(
             "Save credentials from the Job Sources page or set `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` for Adzuna refreshes."
@@ -304,16 +268,14 @@ def build_ollama_check(
     ollama_base_url: str = DEFAULT_OLLAMA_BASE_URL,
     timeout_seconds: int = 2,
 ) -> dict[str, Any]:
+    check = partial(make_check, key="ollama", title="Ollama", blocking=False)
     status = get_ollama_status(
         ollama_base_url,
         timeout_seconds=timeout_seconds,
     )
     if not status.get("command_available") and not status.get("reachable"):
-        return make_check(
-            key="ollama",
-            title="Ollama",
+        return check(
             status="warn",
-            blocking=False,
             summary="Ollama CLI was not found, and no Ollama server is reachable.",
             next_step="Install Ollama first, then run `offerquest ollama serve` and `offerquest ollama pull`.",
             detail="OfferQuest can still run non-LLM workflows without Ollama.",
@@ -323,11 +285,8 @@ def build_ollama_check(
         models = status.get("models", [])
         model_names = [str(model.get("name")) for model in models if model.get("name")]
         if not model_names:
-            return make_check(
-                key="ollama",
-                title="Ollama",
+            return check(
                 status="warn",
-                blocking=False,
                 summary=f"Ollama is reachable at `{ollama_base_url}`, but no models are installed yet.",
                 next_step="Pull a recommended model with `offerquest ollama pull`, then rerun `offerquest doctor`.",
                 detail="OfferQuest cover-letter LLM workflows need at least one installed model.",
@@ -336,20 +295,14 @@ def build_ollama_check(
         detail = "Available models: " + ", ".join(model_names[:5]) + ("." if len(model_names) <= 5 else ", ...")
         if status.get("missing_recommended_models"):
             detail += " Missing recommended models: " + ", ".join(status["missing_recommended_models"]) + "."
-        return make_check(
-            key="ollama",
-            title="Ollama",
+        return check(
             status="ok",
-            blocking=False,
             summary=f"Ollama is reachable at `{ollama_base_url}` and has {len(model_names)} installed model(s).",
             detail=detail,
         )
 
-    return make_check(
-        key="ollama",
-        title="Ollama",
+    return check(
         status="warn",
-        blocking=False,
         summary=f"Ollama is installed, but the server is not reachable at `{ollama_base_url}`.",
         next_step="Start it with `offerquest ollama serve`, then pull a model with `offerquest ollama pull` if needed.",
         detail=str(status.get("error") or "The server did not respond."),

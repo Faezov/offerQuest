@@ -56,33 +56,33 @@ GENERIC_PROFILE_TITLES = [
 ]
 
 
-def build_resume_tailoring_plan_for_job_record(
-    cv_path: str | Path,
-    job_record: dict[str, Any],
-    *,
-    cover_letter_path: str | Path | None = None,
-) -> dict[str, Any]:
-    cv_text = read_document_text(cv_path)
-    cover_letter_text = read_optional_text(cover_letter_path)
-    job_text = job_record_to_text(job_record)
-
-    plan = build_resume_tailoring_plan(
-        cv_text,
-        job_text,
-        cv_path=str(cv_path),
-        cover_letter_text=cover_letter_text,
-    )
-    plan.update(
+def _merge_job_record_metadata(payload: dict[str, Any], job_record: dict[str, Any]) -> dict[str, Any]:
+    payload.update(
         {
             "job_id": job_record.get("id"),
-            "job_title": job_record.get("title") or plan.get("job_title"),
+            "job_title": job_record.get("title") or payload.get("job_title"),
             "company": job_record.get("company"),
             "location": job_record.get("location"),
             "job_url": job_record.get("url"),
             "job_source": job_record.get("source"),
         }
     )
-    return plan
+    return payload
+
+
+def build_resume_tailoring_plan_for_job_record(
+    cv_path: str | Path,
+    job_record: dict[str, Any],
+    *,
+    cover_letter_path: str | Path | None = None,
+) -> dict[str, Any]:
+    plan = build_resume_tailoring_plan(
+        read_document_text(cv_path),
+        job_record_to_text(job_record),
+        cv_path=str(cv_path),
+        cover_letter_text=read_optional_text(cover_letter_path),
+    )
+    return _merge_job_record_metadata(plan, job_record)
 
 
 def build_resume_tailored_draft_for_job_record(
@@ -91,27 +91,13 @@ def build_resume_tailored_draft_for_job_record(
     *,
     cover_letter_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    cv_text = read_document_text(cv_path)
-    cover_letter_text = read_optional_text(cover_letter_path)
-    job_text = job_record_to_text(job_record)
-
     draft = build_resume_tailored_draft(
-        cv_text,
-        job_text,
+        read_document_text(cv_path),
+        job_record_to_text(job_record),
         cv_path=str(cv_path),
-        cover_letter_text=cover_letter_text,
+        cover_letter_text=read_optional_text(cover_letter_path),
     )
-    draft.update(
-        {
-            "job_id": job_record.get("id"),
-            "job_title": job_record.get("title") or draft.get("job_title"),
-            "company": job_record.get("company"),
-            "location": job_record.get("location"),
-            "job_url": job_record.get("url"),
-            "job_source": job_record.get("source"),
-        }
-    )
-    return draft
+    return _merge_job_record_metadata(draft, job_record)
 
 
 def build_resume_tailoring_plan(

@@ -6,12 +6,10 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from .errors import OllamaError
+
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
-
-
-class OllamaError(RuntimeError):
-    """Raised when an Ollama request fails."""
 
 
 def get_ollama_status(base_url: str = DEFAULT_OLLAMA_BASE_URL) -> dict:

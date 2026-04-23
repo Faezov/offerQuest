@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 from . import config as _config
@@ -15,7 +16,7 @@ from .cover_letter import (
     write_cover_letter,
 )
 from .docx import export_document_as_docx
-from .errors import OfferQuestError
+from .errors import ConfigError, OfferQuestError
 from .extractors import read_document_text
 from .jobs import (
     collect_job_record_inputs,
@@ -36,6 +37,8 @@ from .scoring import rank_job_files, rank_job_records, score_job_file
 from .workspace import ProjectState
 
 SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
+LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--offerquest-config",
         type=Path,
         help="Optional JSON file that overrides OfferQuest defaults for skills, search focus, and scoring",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="WARNING",
+        choices=LOG_LEVEL_NAMES,
+        help="Logging verbosity for OfferQuest diagnostics, default: WARNING",
     )
     parser.add_argument(
         "--version",
@@ -253,14 +262,14 @@ def add_profile_reuse_arguments(parser: argparse.ArgumentParser) -> None:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    configure_logging(args.log_level)
     if args.offerquest_config:
         try:
             _config.set_active(_config.load_config(args.offerquest_config))
-        except json.JSONDecodeError as exc:
-            parser.exit(2, f"error: invalid OfferQuest config {args.offerquest_config}: {exc}\n")
-        except OSError as exc:
-            parser.exit(2, f"error: unable to load OfferQuest config {args.offerquest_config}: {exc}\n")
+        except ConfigError as exc:
+            parser.exit(2, f"error: {exc}\n")
     project_state = ProjectState.from_root(Path.cwd())
+    logger.info("Running OfferQuest command %s", args.command)
 
     try:
         if args.command == "build-profile":
@@ -715,6 +724,13 @@ def load_profile(args: argparse.Namespace, parser: argparse.ArgumentParser) -> d
         parser.error("--cover-letter is required when building a profile from --cv")
 
     return build_profile_from_files(args.cv, args.cover_letter)
+
+
+def configure_logging(level_name: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level_name.upper(), logging.WARNING),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
 
 
 def collect_job_paths(jobs_dir: Path) -> list[Path]:

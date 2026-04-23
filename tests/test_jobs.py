@@ -10,6 +10,7 @@ from offerquest.jobs import (
     collect_job_record_inputs,
     fetch_adzuna_jobs,
     fetch_adzuna_job_pages,
+    fetch_json,
     fetch_greenhouse_jobs,
     infer_manual_company_and_location,
     import_manual_jobs,
@@ -25,6 +26,7 @@ from offerquest.jobs import (
     write_adzuna_credentials_file,
     write_job_records,
 )
+from offerquest.errors import JobSourceError
 from offerquest.scoring import score_job_record
 
 
@@ -200,6 +202,12 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["company"], "NSW Health")
         self.assertEqual(fetch_json_mock.call_count, 1)
+
+    def test_fetch_json_wraps_failures_in_job_source_error(self) -> None:
+        with patch("offerquest.jobs.urlopen", side_effect=OSError("network down")):
+            with patch("offerquest.jobs.logger.warning"):
+                with self.assertRaises(JobSourceError):
+                    fetch_json("https://example.com/jobs", retries=1)
 
     def test_fetch_adzuna_job_pages_merges_pages_and_adds_query_metadata(self) -> None:
         payloads = [

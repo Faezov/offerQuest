@@ -6,7 +6,7 @@ from pathlib import Path
 from . import config as _config
 from .extractors import read_document_text
 from .jobs import infer_manual_title, job_record_to_text
-from .matching import contains_any_keyword, contains_keyword, find_pattern_matches, prepare_matchable_text
+from .matching import MatchableText, contains_any_keyword, contains_keyword, find_pattern_matches, prepare_matchable_text
 
 
 def score_job_file(job_path: str | Path, profile: dict) -> dict:
@@ -41,7 +41,6 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
     cfg = _config.active()
     prepared = prepare_matchable_text(job_text)
     job_title = infer_job_title(job_text)
-    title_prepared = prepare_matchable_text(job_title)
     job_skills = detect_matches(prepared, cfg.skill_patterns)
     job_domains = detect_matches(prepared, cfg.domain_patterns)
 
@@ -112,7 +111,7 @@ def rank_job_records(job_records: list[dict], profile: dict) -> list[dict]:
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
 
 
-def detect_matches(text: str | object, patterns: dict[str, list[str]]) -> set[str]:
+def detect_matches(text: str | MatchableText, patterns: dict[str, list[str]]) -> set[str]:
     return set(find_pattern_matches(text, patterns))
 
 
@@ -155,7 +154,7 @@ def score_ratio(matches: int, total: int, *, maximum: int, neutral: int) -> int:
     return round((matches / total) * maximum)
 
 
-def score_seniority(job_text: str | object, years_experience: int | None) -> int:
+def score_seniority(job_text: str | MatchableText, years_experience: int | None) -> int:
     if contains_any_keyword(job_text, ["senior", "lead", "principal"]):
         return 10 if (years_experience or 0) >= 8 else 6
     if contains_keyword(job_text, "manager"):
@@ -163,7 +162,7 @@ def score_seniority(job_text: str | object, years_experience: int | None) -> int
     return 8
 
 
-def score_location(job_text: str | object) -> int:
+def score_location(job_text: str | MatchableText) -> int:
     cfg = _config.active()
     if contains_any_keyword(job_text, cfg.location_secondary_terms):
         return 2

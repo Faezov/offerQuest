@@ -4,6 +4,7 @@ import ast
 import hashlib
 import html
 import json
+import logging
 import os
 import re
 import tempfile
@@ -14,12 +15,14 @@ from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .errors import JobSourceError
 from .extractors import normalize_text, read_document_text
 
 ADZUNA_ENV_PATH_ENVVAR = "OFFERQUEST_ADZUNA_ENV_FILE"
 ADZUNA_ENV_FILENAME = "adzuna.env"
 SUPPORTED_MANUAL_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 SUPPORTED_JOB_RECORD_SUFFIXES = {".json", ".jsonl"}
+logger = logging.getLogger(__name__)
 HEADER_LOCATION_ORG_MARKERS = frozenset(
     {
         "agency",
@@ -117,11 +120,19 @@ def fetch_adzuna_job_pages(
     results_per_page: int = 20,
 ) -> list[dict]:
     if pages < 1:
-        raise ValueError("Adzuna pages must be at least 1.")
+        raise JobSourceError("Adzuna pages must be at least 1.")
 
     extra_metadata = drop_none({"query_what": what, "query_where": where, "query_country": country})
     record_sets: list[list[dict]] = []
     for page in range(1, pages + 1):
+        logger.info(
+            "Fetching Adzuna page %s/%s for what=%r where=%r country=%s",
+            page,
+            pages,
+            what,
+            where,
+            country,
+        )
         batch = fetch_adzuna_jobs(
             app_id=app_id,
             app_key=app_key,
@@ -132,6 +143,7 @@ def fetch_adzuna_job_pages(
             results_per_page=results_per_page,
         )
         if not batch:
+            logger.info("Adzuna returned no jobs on page %s; stopping early", page)
             break
         record_sets.append(annotate_job_records(batch, extra_metadata=extra_metadata))
     return merge_job_record_sets(*record_sets)
@@ -162,10 +174,15 @@ def refresh_job_sources(
 ) -> dict[str, Any]:
     root = Path(workspace_root).resolve()
     config_file = resolve_workspace_path(root, config_path)
-    config = json.loads(config_file.read_text(encoding="utf-8"))
+    try:
+        config = json.loads(config_file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise JobSourceError(f"Could not read job refresh config: {config_file}") from exc
+    except json.JSONDecodeError as exc:
+        raise JobSourceError(f"Job refresh config is invalid JSON: {config_file}") from exc
     sources = config.get("sources", [])
     if not isinstance(sources, list):
-        raise ValueError("Job refresh config must contain a `sources` list.")
+        raise JobSourceError("Job refresh config must contain a `sources` list.")
 
     output_root = (
         resolve_workspace_path(root, output_dir)
@@ -173,6 +190,7 @@ def refresh_job_sources(
         else root / "outputs" / "jobs"
     )
     output_root.mkdir(parents=True, exist_ok=True)
+    logger.info("Refreshing job sources from %s into %s", config_file, output_root)
 
     refreshed_sources: list[dict[str, Any]] = []
     generated_outputs: list[Path] = []
@@ -180,26 +198,27 @@ def refresh_job_sources(
 
     for source in sources:
         if not isinstance(source, dict):
-            raise ValueError("Each job source config entry must be an object.")
+            raise JobSourceError("Each job source config entry must be an object.")
         if source.get("enabled", True) is False:
             continue
 
         source_type = str(source.get("type") or "").strip().lower()
         source_name = str(source.get("name") or source.get("output") or source_type).strip()
         if not source_type or not source_name:
-            raise ValueError("Each enabled job source needs both `type` and `name`.")
+            raise JobSourceError("Each enabled job source needs both `type` and `name`.")
 
         output_name = str(source.get("output") or f"{slugify(source_name)}.jsonl").strip()
         if not output_name:
-            raise ValueError(f"Job source `{source_name}` is missing an output filename.")
+            raise JobSourceError(f"Job source `{source_name}` is missing an output filename.")
         output_path = output_root / output_name
+        logger.info("Refreshing source %s (%s)", source_name, source_type)
 
         if source_type == "adzuna":
             if adzuna_credentials is None:
                 adzuna_credentials = resolve_adzuna_credentials(adzuna_app_id, adzuna_app_key)
             app_id, app_key = adzuna_credentials
             if not app_id or not app_key:
-                raise ValueError(
+                raise JobSourceError(
                     "Adzuna credentials are required for refresh sources with type `adzuna`."
                 )
 
@@ -218,7 +237,7 @@ def refresh_job_sources(
         elif source_type == "greenhouse":
             board_token = string_or_none(source.get("board_token"))
             if not board_token:
-                raise ValueError(
+                raise JobSourceError(
                     f"Greenhouse source `{source_name}` is missing `board_token`."
                 )
             records = annotate_job_records(
@@ -228,15 +247,16 @@ def refresh_job_sources(
         elif source_type == "manual":
             input_path = string_or_none(source.get("input_path"))
             if not input_path:
-                raise ValueError(f"Manual source `{source_name}` is missing `input_path`.")
+                raise JobSourceError(f"Manual source `{source_name}` is missing `input_path`.")
             records = annotate_job_records(
                 import_manual_jobs(resolve_workspace_path(root, input_path)),
                 extra_metadata={"source_name": source_name},
             )
         else:
-            raise ValueError(f"Unsupported job source type: {source_type}")
+            raise JobSourceError(f"Unsupported job source type: {source_type}")
 
         write_job_records(output_path, records)
+        logger.info("Wrote %s job records for %s to %s", len(records), source_name, output_path)
         generated_outputs.append(output_path)
         refreshed_sources.append(
             {
@@ -255,7 +275,7 @@ def refresh_job_sources(
     if merge_enabled:
         merge_inputs = merge_config.get("inputs")
         if merge_inputs is not None and not isinstance(merge_inputs, list):
-            raise ValueError("Job refresh config `merge.inputs` must be a list when provided.")
+            raise JobSourceError("Job refresh config `merge.inputs` must be a list when provided.")
 
         if merge_inputs:
             input_paths = [resolve_refresh_input_path(output_root, item) for item in merge_inputs]
@@ -265,14 +285,15 @@ def refresh_job_sources(
         merged_records = collect_job_record_inputs(input_paths)
         merged_output_name = str(merge_config.get("output") or "all.jsonl").strip()
         if not merged_output_name:
-            raise ValueError("Job refresh config merge output cannot be empty.")
+            raise JobSourceError("Job refresh config merge output cannot be empty.")
         merged_output_path = output_root / merged_output_name
         write_job_records(merged_output_path, merged_records)
         merged_job_count = len(merged_records)
+        logger.info("Merged %s job records into %s", merged_job_count, merged_output_path)
 
     summary_output_name = str(config.get("summary_output") or "refresh-summary.json").strip()
     if not summary_output_name:
-        raise ValueError("Job refresh config summary output cannot be empty.")
+        raise JobSourceError("Job refresh config summary output cannot be empty.")
     summary_path = output_root / summary_output_name
 
     summary = {
@@ -291,6 +312,7 @@ def refresh_job_sources(
         "summary_output": str(relative_to_root(summary_path, root)),
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    logger.info("Wrote job refresh summary to %s", summary_path)
     return summary
 
 
@@ -312,7 +334,8 @@ def fetch_json(url: str, *, timeout: int = 30, retries: int = 3) -> dict[str, An
             return json.loads(body)
         except Exception as exc:
             last_error = exc
-    raise last_error
+            logger.warning("Request to %s failed on attempt %s/%s: %s", url, attempt + 1, retries, exc)
+    raise JobSourceError(f"Failed to fetch JSON from {url}") from last_error
 
 
 def normalize_adzuna_job(job: dict[str, Any], *, country: str) -> dict:

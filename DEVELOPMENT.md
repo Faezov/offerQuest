@@ -22,7 +22,7 @@ Create a fresh workspace and start from the same flow users will see:
 offerquest init-workspace --path /tmp/offerquest-workspace
 cd /tmp/offerquest-workspace
 offerquest doctor --path .
-offerquest-workbench --root .
+offerquest-workbench --root . --port auto
 ```
 
 ## Release Artifacts

@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import socket
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ from ..workbench import (
 
 LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 logger = logging.getLogger(__name__)
+AUTO_PORT = "auto"
 
 
 def validate_required_form_fields(
@@ -56,6 +58,59 @@ def validate_required_form_fields(
     return f"{', '.join(missing_labels[:-1])}, and {missing_labels[-1]} are required."
 
 
+def parse_port_argument(value: str) -> int | str:
+    normalized = value.strip().lower()
+    if normalized == AUTO_PORT:
+        return AUTO_PORT
+
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Port must be a whole number or `auto`.") from exc
+
+    if port < 1 or port > 65535:
+        raise argparse.ArgumentTypeError("Port must be between 1 and 65535, or `auto`.")
+    return port
+
+
+def resolve_port(host: str, requested_port: int | str) -> int:
+    if requested_port == AUTO_PORT:
+        return find_available_port(host)
+    return int(requested_port)
+
+
+def find_available_port(host: str) -> int:
+    last_error: OSError | None = None
+    for family, socktype, proto, _, sockaddr in socket.getaddrinfo(
+        host,
+        0,
+        type=socket.SOCK_STREAM,
+    ):
+        try:
+            with socket.socket(family, socktype, proto) as candidate:
+                candidate.bind(sockaddr)
+                return int(candidate.getsockname()[1])
+        except OSError as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise OSError(f"Could not find a free port for host {host}: {last_error}") from last_error
+    raise OSError(f"Could not find a free port for host {host}.")
+
+
+def format_workbench_url(host: str, port: int) -> str:
+    display_host = normalize_display_host(host)
+    if ":" in display_host and not display_host.startswith("["):
+        return f"http://[{display_host}]:{port}"
+    return f"http://{display_host}:{port}"
+
+
+def normalize_display_host(host: str) -> str:
+    if host in {"127.0.0.1", "0.0.0.0", "::1", "::", "localhost"}:
+        return "localhost"
+    return host
+
+
 def create_app(
     *,
     workspace_root: str | Path | None = None,
@@ -63,6 +118,7 @@ def create_app(
 ) -> Any:
     try:
         from fastapi import FastAPI, HTTPException, Request
+        from fastapi.responses import FileResponse
         from fastapi.responses import HTMLResponse
         from fastapi.staticfiles import StaticFiles
         from fastapi.templating import Jinja2Templates
@@ -108,6 +164,13 @@ def create_app(
                 "page_title": "Workbench",
                 "view": build_dashboard_view(project_state),
             },
+        )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> FileResponse:
+        return FileResponse(
+            static_dir / "favicon.svg",
+            media_type="image/svg+xml",
         )
 
     @app.get("/runs", response_class=HTMLResponse)
@@ -1157,7 +1220,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, help="Optional OfferQuest JSON config override")
     parser.add_argument("--log-level", default="INFO", choices=LOG_LEVEL_NAMES, help="Logging verbosity for workbench diagnostics, default: INFO")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host, default: 127.0.0.1")
-    parser.add_argument("--port", type=int, default=8787, help="Bind port, default: 8787")
+    parser.add_argument(
+        "--port",
+        type=parse_port_argument,
+        default=8787,
+        help="Bind port, default: 8787. Use `auto` to choose a free port automatically.",
+    )
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for local development")
     args = parser.parse_args(argv)
     configure_logging(args.log_level)
@@ -1173,13 +1241,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.config:
         _config.load_config(args.config)
         os.environ[_config.CONFIG_PATH_ENVVAR] = str(args.config.resolve())
-    logger.info("Starting OfferQuest workbench on %s:%s (reload=%s)", args.host, args.port, args.reload)
+    port = resolve_port(args.host, args.port)
+    launch_url = format_workbench_url(args.host, port)
+    logger.info("Starting OfferQuest workbench on %s:%s (reload=%s)", args.host, port, args.reload)
+    print(f"OfferQuest workbench available at {launch_url}")
 
     if args.reload:
         uvicorn.run(
             "offerquest.web.app:create_app",
             host=args.host,
-            port=args.port,
+            port=port,
             reload=True,
             factory=True,
         )
@@ -1189,7 +1260,7 @@ def main(argv: list[str] | None = None) -> int:
         app = create_app(workspace_root=args.root, config_path=args.config)
     except OfferQuestError as exc:
         raise SystemExit(f"error: {exc}") from exc
-    uvicorn.run(app, host=args.host, port=args.port, reload=False)
+    uvicorn.run(app, host=args.host, port=port, reload=False)
     return 0
 
 

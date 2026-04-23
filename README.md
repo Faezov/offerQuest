@@ -31,7 +31,13 @@ Start the local workbench:
 offerquest-workbench --root .
 ```
 
-Then open `http://127.0.0.1:8787` in your browser.
+Then open `http://localhost:8787` in your browser.
+
+If you want OfferQuest to pick a free port automatically:
+
+```bash
+offerquest-workbench --root . --port auto
+```
 
 ## Workspace Layout
 

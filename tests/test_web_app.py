@@ -1,12 +1,38 @@
+import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
-from offerquest.web.app import validate_required_form_fields
+from offerquest.web.app import (
+    AUTO_PORT,
+    format_workbench_url,
+    main,
+    parse_port_argument,
+    resolve_port,
+    validate_required_form_fields,
+)
 
 
 class WebAppTests(unittest.TestCase):
+    def test_parse_port_argument_accepts_auto(self) -> None:
+        self.assertEqual(parse_port_argument("auto"), AUTO_PORT)
+
+    def test_format_workbench_url_prefers_localhost_for_loopback(self) -> None:
+        self.assertEqual(
+            format_workbench_url("127.0.0.1", 8787),
+            "http://localhost:8787",
+        )
+
+    def test_resolve_port_uses_auto_lookup(self) -> None:
+        with patch("offerquest.web.app.find_available_port", return_value=54321) as lookup:
+            port = resolve_port("127.0.0.1", AUTO_PORT)
+
+        self.assertEqual(port, 54321)
+        self.assertEqual(lookup.call_args.args, ("127.0.0.1",))
+
     def test_validate_required_form_fields_formats_missing_labels(self) -> None:
         error = validate_required_form_fields(
             {
@@ -22,6 +48,22 @@ class WebAppTests(unittest.TestCase):
         )
 
         self.assertEqual(error, "Jobs file and Output path are required.")
+
+    def test_main_uses_auto_port_and_prints_launch_url(self) -> None:
+        output = io.StringIO()
+        uvicorn_stub = SimpleNamespace(run=Mock())
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with patch.dict(sys.modules, {"uvicorn": uvicorn_stub}):
+                with patch("offerquest.web.app.create_app", return_value=object()):
+                    with patch("offerquest.web.app.find_available_port", return_value=54321):
+                        with patch("sys.stdout", output):
+                            exit_code = main(["--root", str(root), "--port", "auto"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("http://localhost:54321", output.getvalue())
+        self.assertEqual(uvicorn_stub.run.call_args.kwargs["port"], 54321)
 
     def test_dashboard_route_returns_html(self) -> None:
         try:
@@ -51,6 +93,25 @@ class WebAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("OfferQuest Local Workbench", response.text)
+
+    def test_favicon_route_serves_icon(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            response = client.get("/favicon.ico")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "image/svg+xml")
+        self.assertIn("<svg", response.text)
 
     def test_dashboard_route_shows_start_here_checklist_for_empty_workspace(self) -> None:
         try:

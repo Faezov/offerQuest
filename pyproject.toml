@@ -44,5 +44,5 @@ offerquest-workbench = "offerquest.web.app:main"
 include = ["offerquest*"]
 
 [tool.setuptools.package-data]
-"offerquest.web" = ["templates/*.html", "static/*.css"]
+"offerquest.web" = ["templates/*.html", "static/*.css", "static/*.svg"]
 "offerquest.config" = ["*.json"]

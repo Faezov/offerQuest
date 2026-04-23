@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OfferQuest">
+  <rect width="64" height="64" rx="16" fill="#f7f1e2"/>
+  <circle cx="30" cy="30" r="16" fill="none" stroke="#0f766e" stroke-width="6"/>
+  <path
+    d="M41 41 52 52"
+    fill="none"
+    stroke="#0f766e"
+    stroke-linecap="round"
+    stroke-width="6"
+  />
+  <path
+    d="M20 32 27 39 43 23"
+    fill="none"
+    stroke="#b45309"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="5"
+  />
+</svg>

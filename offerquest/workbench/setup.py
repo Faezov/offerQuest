@@ -441,7 +441,7 @@ def run_job_source_delete(
         action="deleted",
         source_name=str(removed_source.get("name") or "source"),
         source_count=len(sources),
-        restorable_source_form_data=source_to_form_data(removed_source),
+        restorable_source_form_data=build_job_source_form_data(removed_source),
     )
 
 
@@ -679,21 +679,36 @@ def default_job_sources_payload() -> dict[str, Any]:
     }
 
 
-def default_job_source_form_data(*, source_type: str = "adzuna") -> dict[str, Any]:
-    normalized_type = source_type if source_type in JOB_SOURCE_TYPES else "adzuna"
+def build_job_source_form_data(
+    source: dict[str, Any] | None = None,
+    *,
+    source_type: str | None = None,
+) -> dict[str, Any]:
+    source = source or {}
+    normalized_type = str(source_type or source.get("type") or "adzuna").strip().lower()
+    if normalized_type not in JOB_SOURCE_TYPES:
+        normalized_type = "adzuna"
+
+    enabled_value = source.get("enabled", "true")
+    enabled = (
+        enabled_value
+        if isinstance(enabled_value, str)
+        else "true" if enabled_value is not False else "false"
+    )
+
     return {
-        "source_index": "",
-        "name": "",
+        "source_index": str(source.get("source_index", source.get("index", ""))),
+        "name": str(source.get("name") or ""),
         "type": normalized_type,
-        "enabled": "true",
-        "output": "",
-        "what": "",
-        "where": "",
-        "country": "au",
-        "pages": "1",
-        "results_per_page": "20",
-        "board_token": "",
-        "input_path": "jobs",
+        "enabled": enabled,
+        "output": str(source.get("output") or ""),
+        "what": str(source.get("what") or ""),
+        "where": str(source.get("where") or ""),
+        "country": str(source.get("country") or "au"),
+        "pages": str(source.get("pages") or "1"),
+        "results_per_page": str(source.get("results_per_page") or "20"),
+        "board_token": str(source.get("board_token") or ""),
+        "input_path": str(source.get("input_path") or "jobs"),
     }
 
 
@@ -705,10 +720,7 @@ def build_job_source_form_state(
     duplicate_source_index: int | None,
 ) -> tuple[dict[str, Any], str, str | None]:
     if source_form_data is not None:
-        normalized = default_job_source_form_data(
-            source_type=str(source_form_data.get("type") or "adzuna").strip().lower()
-        )
-        normalized.update({key: source_form_data.get(key, value) for key, value in normalized.items()})
+        normalized = build_job_source_form_data(source_form_data)
         mode = "edit" if str(normalized.get("source_index") or "").strip() else "create"
         return normalized, mode, None
 
@@ -716,7 +728,7 @@ def build_job_source_form_state(
     if duplicate_source_index is not None:
         if duplicate_source_index < 0 or duplicate_source_index >= len(sources):
             return (
-                default_job_source_form_data(),
+                build_job_source_form_data(),
                 "create",
                 "Selected source for duplication was not found.",
             )
@@ -729,7 +741,7 @@ def build_job_source_form_state(
         )
         return (
             {
-                **source_to_form_data(source),
+                **build_job_source_form_data(source),
                 "source_index": "",
                 "name": duplicate_name,
                 "output": duplicate_output,
@@ -741,35 +753,18 @@ def build_job_source_form_state(
     if edit_source_index is not None:
         if edit_source_index < 0 or edit_source_index >= len(sources):
             return (
-                default_job_source_form_data(),
+                build_job_source_form_data(),
                 "create",
                 "Selected source for editing was not found.",
             )
         source = sources[edit_source_index]
         return (
-            source_to_form_data(source),
+            build_job_source_form_data(source),
             "edit",
             f"Editing `{source.get('name') or 'source'}`.",
         )
 
-    return default_job_source_form_data(), "create", None
-
-
-def source_to_form_data(source: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source_index": str(source.get("index", "")),
-        "name": str(source.get("name") or ""),
-        "type": str(source.get("type") or "adzuna"),
-        "enabled": "true" if source.get("enabled", True) else "false",
-        "output": str(source.get("output") or ""),
-        "what": str(source.get("what") or ""),
-        "where": str(source.get("where") or ""),
-        "country": str(source.get("country") or "au"),
-        "pages": str(source.get("pages") or "1"),
-        "results_per_page": str(source.get("results_per_page") or "20"),
-        "board_token": str(source.get("board_token") or ""),
-        "input_path": str(source.get("input_path") or "jobs"),
-    }
+    return build_job_source_form_data(), "create", None
 
 
 def parse_optional_source_index(value: Any) -> int | None:

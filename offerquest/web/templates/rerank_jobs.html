@@ -18,16 +18,28 @@
         <div class="empty-state">
           <h3>No ranking data available</h3>
           <p>Run job ranking first so the workbench has a ranking file to rerank.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('rankings') }}">Open Latest Rankings</a>
+            <a class="secondary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+          </div>
         </div>
       {% elif not view.has_documents %}
         <div class="empty-state">
           <h3>No candidate documents found</h3>
           <p>Add your CV and optional base cover letter under <code>data/</code> first.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('build_profile_page') }}">Open Build Profile</a>
+            <a class="secondary-button" href="{{ request.url_for('dashboard') }}">Open Overview</a>
+          </div>
         </div>
       {% elif not view.has_jobs_files %}
         <div class="empty-state">
           <h3>No jobs files found</h3>
           <p>Import or fetch jobs into <code>outputs/</code> first so the rerank can resolve full job records.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+            <a class="secondary-button" href="{{ request.url_for('rankings') }}">Back to Rankings</a>
+          </div>
         </div>
       {% else %}
         <form method="post" class="form-stack">
@@ -77,10 +89,20 @@
             <input type="text" name="top_n" value="{{ view.selected_top_n }}" required>
           </label>
 
-          <label class="field">
-            <span>Output JSON path</span>
-            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
-          </label>
+          <details class="form-disclosure">
+            <summary class="form-disclosure__summary">
+              <div class="form-disclosure__intro">
+                <p class="eyebrow">Advanced Output</p>
+                <p>Adjust the saved rerank artifact path only when you want a custom destination.</p>
+              </div>
+            </summary>
+            <div class="form-disclosure__body">
+              <label class="field">
+                <span>Output JSON path</span>
+                <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+              </label>
+            </div>
+          </details>
 
           <button class="primary-button" type="submit">Rerank Top Jobs</button>
         </form>
@@ -115,12 +137,12 @@
           </div>
           {% for item in view.selected_ranking_preview %}
             <div class="ranking-table__row">
-              <span>#{{ item.rank }}</span>
-              <strong>{{ item.job_title }}</strong>
-              <span>{{ item.company }}</span>
-              <span>{{ item.location }}</span>
-              <span class="score-pill">{{ item.score }}</span>
-              <div class="ranking-table__links">
+              <span data-label="Rank">#{{ item.rank }}</span>
+              <strong data-label="Role">{{ item.job_title }}</strong>
+              <span data-label="Company">{{ item.company }}</span>
+              <span data-label="Location">{{ item.location }}</span>
+              <span data-label="Score"><span class="score-pill">{{ item.score }}</span></span>
+              <div class="ranking-table__links" data-label="Reference">
                 {% if item.job_id %}
                   <code>{{ item.job_id }}</code>
                 {% endif %}
@@ -133,6 +155,64 @@
   </section>
 
   {% if view.result %}
+    {% if view.result.payload.rankings %}
+      {% set top_job = view.result.payload.rankings[0] %}
+      <section class="panel-grid">
+        <article class="panel">
+          <div class="panel__header">
+            <h2>Recommended Next Step</h2>
+            <p>Use the strongest reranked job as the first role you fully work through.</p>
+          </div>
+          <div class="feature-callout">
+            <div class="feature-callout__body">
+              <p class="eyebrow">Top Reranked Match</p>
+              <h3>{{ top_job.job_title }} at {{ top_job.company }}</h3>
+              <p>The rerank has already narrowed the shortlist further. Moving straight into tailoring keeps the momentum while the context is fresh.</p>
+              <div class="feature-callout__meta">
+                <span class="meta-pill">Score {{ top_job.score }}</span>
+                <span class="meta-pill">{{ top_job.location or "Unknown location" }}</span>
+                {% if top_job.ats_score is defined %}
+                  <span class="meta-pill">ATS {{ top_job.ats_score }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="button-row">
+              {% if top_job.job_id %}
+                <a class="primary-button" href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ top_job.job_id }}&ranking_file={{ view.result.output_path_relative }}">Start Tailoring</a>
+                <a class="secondary-button" href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ top_job.job_id }}&mode=rule_based&ranking_file={{ view.result.output_path_relative }}">Draft Letter</a>
+              {% endif %}
+              <a class="secondary-button" href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open Recorded Run</a>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel__header">
+            <h2>Rerank Output Ready</h2>
+            <p>The new ranking artifact becomes the better source for the next tailoring pass.</p>
+          </div>
+          <dl class="detail-grid">
+            <div>
+              <dt>Saved file</dt>
+              <dd><code>{{ view.result.output_path_relative }}</code></dd>
+            </div>
+            <div>
+              <dt>Reranked count</dt>
+              <dd>{{ view.result.payload.reranked_count }}</dd>
+            </div>
+            <div>
+              <dt>Total jobs</dt>
+              <dd>{{ view.result.payload.job_count }}</dd>
+            </div>
+            <div>
+              <dt>Strategy</dt>
+              <dd>{{ view.result.payload.rerank_strategy }}</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+    {% endif %}
+
     <section class="panel">
       <div class="panel__header">
         <h2>Reranked Output Ready</h2>
@@ -177,11 +257,11 @@
         </div>
         {% for item in view.result.payload.rankings[:12] %}
           <div class="ranking-table__row">
-            <div>
+            <div data-label="Rank">
               <strong>#{{ item.rerank_rank }}</strong>
               <p class="ranking-table__meta">Was #{{ item.original_rank }}</p>
             </div>
-            <div>
+            <div data-label="Role">
               <strong>{{ item.job_title }}</strong>
               <p class="ranking-table__meta">
                 {% if item.rank_change > 0 %}
@@ -193,22 +273,27 @@
                 {% endif %}
               </p>
             </div>
-            <span>{{ item.company }}</span>
-            <span>{{ item.location }}</span>
-            <div>
+            <span data-label="Company">{{ item.company }}</span>
+            <span data-label="Location">{{ item.location }}</span>
+            <div data-label="Score">
               <span class="score-pill">{{ item.score }}</span>
               {% if item.ats_score is defined %}
                 <p class="ranking-table__meta">ATS {{ item.ats_score }}</p>
               {% endif %}
             </div>
-            <div class="ranking-table__links">
+            <div class="ranking-table__links" data-label="Next step">
               {% if item.job_id %}
-                <a href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Tailor CV</a>
-                <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">CV Draft</a>
-                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Generate Draft</a>
-              {% endif %}
-              {% if item.job_id %}
-                <code>{{ item.job_id }}</code>
+                <a class="secondary-button secondary-button--compact" href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.result.output_path_relative }}">Start Tailoring</a>
+                <details class="row-actions">
+                  <summary>More actions</summary>
+                  <div class="row-actions__menu">
+                    <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.result.output_path_relative }}">Build CV Draft</a>
+                    <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based&ranking_file={{ view.result.output_path_relative }}">Rule-based Letter</a>
+                    <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm&ranking_file={{ view.result.output_path_relative }}">LLM Letter</a>
+                    <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.result.output_path_relative }}">Compare Drafts</a>
+                    <code>{{ item.job_id }}</code>
+                  </div>
+                </details>
               {% endif %}
             </div>
           </div>

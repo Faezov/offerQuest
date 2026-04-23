@@ -45,11 +45,59 @@
     {% endif %}
   </section>
 
+  {% if view.has_ranking and view.top_rankings %}
+    {% set top_job = view.top_rankings[0] %}
+    <section class="panel-grid">
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Recommended Next Step</h2>
+          <p>Start with the strongest current match, then move forward through one clear workflow.</p>
+        </div>
+        <div class="feature-callout">
+          <div class="feature-callout__body">
+            <p class="eyebrow">Top Match</p>
+            <h3>{{ top_job.job_title }} at {{ top_job.company }}</h3>
+            <p>Use this job as your working target first. It is usually the fastest path to a tailored CV draft and a focused cover letter.</p>
+            <div class="feature-callout__meta">
+              <span class="meta-pill">Score {{ top_job.score }}</span>
+              <span class="meta-pill">{{ top_job.location or "Unknown location" }}</span>
+              {% if top_job.employment_type %}
+                <span class="meta-pill">{{ top_job.employment_type }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="button-row">
+            {% if top_job.job_id %}
+              <a class="primary-button" href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ top_job.job_id }}&ranking_file={{ view.ranking_file }}">Start Tailoring</a>
+              <a class="secondary-button" href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ top_job.job_id }}&ranking_file={{ view.ranking_file }}">Build CV Draft</a>
+            {% endif %}
+            {% if top_job.job_url %}
+              <a class="secondary-button" href="{{ top_job.job_url }}" target="_blank" rel="noreferrer">Open Listing</a>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <h2>Suggested Flow</h2>
+          <p>One simple path keeps the shortlist from turning into a branch maze.</p>
+        </div>
+        <ol class="step-list">
+          <li>Open the top match and build a CV tailoring plan.</li>
+          <li>Turn that plan into a tailored CV draft before writing letters.</li>
+          <li>Create a rule-based or LLM cover letter once the resume direction is set.</li>
+          <li>Compare drafts only after you have one job worth serious attention.</li>
+        </ol>
+      </article>
+    </section>
+  {% endif %}
+
   {% if view.has_ranking %}
     <section class="panel">
       <div class="panel__header">
         <h2>Top Ranked Jobs</h2>
-        <p>The strongest current opportunities from the latest ranking payload.</p>
+        <p>The strongest current opportunities from the latest ranking payload, with one clear next action per row.</p>
       </div>
       <div class="ranking-table">
         <div class="ranking-table__head">
@@ -62,29 +110,37 @@
         </div>
         {% for item in view.top_rankings %}
           <div class="ranking-table__row">
-            <span>#{{ item.rank }}</span>
-            <div>
+            <span data-label="Rank">#{{ item.rank }}</span>
+            <div data-label="Role">
               <strong>{{ item.job_title }}</strong>
               {% if item.employment_type %}
                 <p class="ranking-table__meta">{{ item.employment_type }}</p>
               {% endif %}
             </div>
-            <span>{{ item.company }}</span>
-            <span>{{ item.location }}</span>
-            <span class="score-pill">{{ item.score }}</span>
-            <div class="ranking-table__links">
+            <span data-label="Company">{{ item.company }}</span>
+            <span data-label="Location">{{ item.location }}</span>
+            <span data-label="Score"><span class="score-pill">{{ item.score }}</span></span>
+            <div class="ranking-table__links" data-label="Next step">
               {% if item.job_id %}
-                <a href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Tailor CV</a>
-                <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">CV Draft</a>
-                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based&ranking_file={{ view.ranking_file }}">Generate Draft</a>
-                <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm&ranking_file={{ view.ranking_file }}">Generate LLM Draft</a>
-                <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Compare Drafts</a>
+                <a class="secondary-button secondary-button--compact" href="{{ request.url_for('build_resume_tailoring_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Start Tailoring</a>
               {% endif %}
-              {% if item.job_url %}
-                <a href="{{ item.job_url }}" target="_blank" rel="noreferrer">Listing</a>
-              {% endif %}
-              {% if item.job_id %}
-                <code>{{ item.job_id }}</code>
+
+              {% if item.job_id or item.job_url %}
+                <details class="row-actions">
+                  <summary>More actions</summary>
+                  <div class="row-actions__menu">
+                    {% if item.job_id %}
+                      <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Build CV Draft</a>
+                      <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=rule_based&ranking_file={{ view.ranking_file }}">Rule-based Letter</a>
+                      <a href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ item.job_id }}&mode=llm&ranking_file={{ view.ranking_file }}">LLM Letter</a>
+                      <a href="{{ request.url_for('compare_cover_letters_page') }}?job_id={{ item.job_id }}&ranking_file={{ view.ranking_file }}">Compare Drafts</a>
+                      <code>{{ item.job_id }}</code>
+                    {% endif %}
+                    {% if item.job_url %}
+                      <a href="{{ item.job_url }}" target="_blank" rel="noreferrer">Open Listing</a>
+                    {% endif %}
+                  </div>
+                </details>
               {% endif %}
             </div>
           </div>

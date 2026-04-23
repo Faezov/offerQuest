@@ -34,10 +34,20 @@
             </select>
           </label>
 
-          <label class="field">
-            <span>Output JSON path</span>
-            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
-          </label>
+          <details class="form-disclosure">
+            <summary class="form-disclosure__summary">
+              <div class="form-disclosure__intro">
+                <p class="eyebrow">Advanced Output</p>
+                <p>Leave the default profile path unless you want the JSON saved somewhere else.</p>
+              </div>
+            </summary>
+            <div class="form-disclosure__body">
+              <label class="field">
+                <span>Output JSON path</span>
+                <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+              </label>
+            </div>
+          </details>
 
           <button class="primary-button" type="submit">Build Profile</button>
         </form>
@@ -45,6 +55,10 @@
         <div class="empty-state">
           <h3>No supported documents found</h3>
           <p>Add CV and cover-letter files under <code>data/</code> first, then reload this page.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('dashboard') }}">Open Overview</a>
+            <a class="secondary-button" href="{{ request.url_for('runs') }}">Open Runs</a>
+          </div>
         </div>
       {% endif %}
     </article>
@@ -65,16 +79,20 @@
   {% if view.result %}
     <section class="panel-grid">
       <article class="panel">
-        <div class="panel__header">
-          <h2>Profile Built</h2>
-          <p>
-            Saved to <code>{{ view.result.output_path_relative }}</code>.
-            <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
-          </p>
-        </div>
-        <dl class="detail-grid">
-          <div>
-            <dt>Name</dt>
+      <div class="panel__header">
+        <h2>Profile Built</h2>
+        <p>
+          Saved to <code>{{ view.result.output_path_relative }}</code>.
+          <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
+        </p>
+      </div>
+      <div class="button-row">
+        <a class="primary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+        <a class="secondary-button" href="{{ request.url_for('runs') }}">View Run History</a>
+      </div>
+      <dl class="detail-grid">
+        <div>
+          <dt>Name</dt>
             <dd>{{ view.result.profile.name or "Not detected" }}</dd>
           </div>
           <div>

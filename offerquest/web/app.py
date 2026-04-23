@@ -47,6 +47,116 @@ LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 logger = logging.getLogger(__name__)
 AUTO_PORT = "auto"
 
+PAGE_CHROME: dict[str, dict[str, str]] = {
+    "dashboard": {
+        "section": "Workspace Overview",
+        "summary": "Check setup readiness, review recent activity, and jump into the next useful step.",
+    },
+    "job_sources": {
+        "section": "Setup",
+        "summary": "Manage provider connections, refresh job feeds, and keep one merged jobs dataset current.",
+    },
+    "ollama_setup": {
+        "section": "Local Models",
+        "summary": "Install and manage the local Ollama runtime, server, and drafting models for workspace workflows.",
+    },
+    "build_profile_page": {
+        "section": "Setup",
+        "summary": "Turn your CV and base cover letter into one reusable candidate profile for ranking and drafting.",
+    },
+    "rankings": {
+        "section": "Shortlist",
+        "summary": "Review the strongest current matches and move into the next workflow from one ranked job.",
+    },
+    "build_rerank_jobs_page": {
+        "section": "Refine Ranking",
+        "summary": "Apply a second ATS-aware pass to the jobs most worth a closer look.",
+    },
+    "build_resume_tailoring_page": {
+        "section": "Tailor CV",
+        "summary": "Plan the highest-impact resume changes for one ranked role before drafting a full revision.",
+    },
+    "build_resume_tailored_draft_page": {
+        "section": "Tailor CV",
+        "summary": "Generate a concrete tailored CV draft and compare the ATS movement against the current version.",
+    },
+    "build_cover_letter_page": {
+        "section": "Cover Letters",
+        "summary": "Create a role-specific draft using either the rule-based workflow or the local Ollama-backed LLM flow.",
+    },
+    "compare_cover_letters_page": {
+        "section": "Cover Letters",
+        "summary": "Review rule-based and LLM cover-letter drafts side by side before choosing a direction.",
+    },
+    "runs": {
+        "section": "History",
+        "summary": "Browse recorded workflow history, metadata, and generated outputs for this workspace.",
+    },
+    "run_detail": {
+        "section": "History",
+        "summary": "Inspect one recorded workflow run, its metadata, and the artifacts it produced.",
+    },
+    "artifact_preview": {
+        "section": "History",
+        "summary": "Preview a generated artifact without leaving the workbench flow.",
+    },
+}
+
+NAV_GROUP_SPECS: tuple[dict[str, Any], ...] = (
+    {
+        "label": "Setup",
+        "items": (
+            {"label": "Overview", "route_name": "dashboard", "active_routes": {"dashboard"}},
+            {"label": "Job Sources", "route_name": "job_sources", "active_routes": {"job_sources"}},
+            {"label": "Ollama Setup", "route_name": "ollama_setup", "active_routes": {"ollama_setup"}},
+            {
+                "label": "Build Profile",
+                "route_name": "build_profile_page",
+                "active_routes": {"build_profile_page"},
+            },
+        ),
+    },
+    {
+        "label": "Workflows",
+        "items": (
+            {"label": "Latest Rankings", "route_name": "rankings", "active_routes": {"rankings"}},
+            {
+                "label": "Tailor CV",
+                "route_name": "build_resume_tailoring_page",
+                "active_routes": {
+                    "build_resume_tailoring_page",
+                    "build_resume_tailored_draft_page",
+                },
+            },
+            {
+                "label": "Cover Letters",
+                "route_name": "build_cover_letter_page",
+                "active_routes": {"build_cover_letter_page"},
+            },
+            {
+                "label": "Compare Drafts",
+                "route_name": "compare_cover_letters_page",
+                "active_routes": {"compare_cover_letters_page"},
+            },
+            {
+                "label": "Rerank Jobs",
+                "route_name": "build_rerank_jobs_page",
+                "active_routes": {"build_rerank_jobs_page"},
+            },
+        ),
+    },
+    {
+        "label": "History",
+        "items": (
+            {
+                "label": "Runs",
+                "route_name": "runs",
+                "active_routes": {"runs", "run_detail", "artifact_preview"},
+            },
+        ),
+    },
+)
+
 
 def validate_required_form_fields(
     values: dict[str, str | None],
@@ -130,6 +240,45 @@ def safe_request_url_for(
         return str(request.url_for(route_name))
     except Exception:
         return fallback
+
+
+def build_navigation_groups(request: Any) -> list[dict[str, Any]]:
+    route = request.scope.get("route")
+    current_route_name = getattr(route, "name", None)
+    groups: list[dict[str, Any]] = []
+
+    for group_spec in NAV_GROUP_SPECS:
+        items: list[dict[str, Any]] = []
+        for item_spec in group_spec["items"]:
+            route_name = str(item_spec["route_name"])
+            fallback = "/" if route_name == "dashboard" else f"/{route_name.replace('_', '-')}"
+            items.append(
+                {
+                    "label": item_spec["label"],
+                    "href": safe_request_url_for(request, route_name, fallback=fallback),
+                    "active": current_route_name in item_spec["active_routes"],
+                }
+            )
+        groups.append({"label": group_spec["label"], "items": items})
+
+    return groups
+
+
+def build_page_chrome(request: Any, page_title: str) -> dict[str, Any]:
+    route = request.scope.get("route")
+    route_name = getattr(route, "name", None)
+    chrome = PAGE_CHROME.get(
+        route_name or "",
+        {
+            "section": "OfferQuest",
+            "summary": "Work through setup, ranking, tailoring, and review from one local workspace.",
+        },
+    )
+    return {
+        "page_section": chrome["section"],
+        "page_summary": chrome["summary"],
+        "nav_groups": build_navigation_groups(request),
+    }
 
 
 class OllamaJobStore:
@@ -230,6 +379,7 @@ def create_app(
     app.state.ollama_jobs = OllamaJobStore()
 
     def render(request: Request, template_name: str, context: dict[str, Any]) -> HTMLResponse:
+        page_title = str(context.get("page_title") or "OfferQuest")
         base_context = {
             "request": request,
             "workspace_root": str(project_state.root),
@@ -238,6 +388,7 @@ def create_app(
                 "ollama_setup",
                 fallback="/ollama",
             ),
+            **build_page_chrome(request, page_title),
         }
         return templates.TemplateResponse(
             request,

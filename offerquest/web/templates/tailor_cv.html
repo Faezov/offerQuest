@@ -18,31 +18,57 @@
         <div class="empty-state">
           <h3>No ranking data available</h3>
           <p>Run job ranking first so the workbench has a selected job to tailor against.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('rankings') }}">Open Latest Rankings</a>
+            <a class="secondary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+          </div>
         </div>
       {% elif not view.selected_job %}
         <div class="empty-state">
           <h3>No job selected</h3>
           <p>Open this page from the rankings view or pass a valid ranked job id.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('rankings') }}">Choose From Rankings</a>
+          </div>
         </div>
       {% elif not view.has_documents %}
         <div class="empty-state">
           <h3>No candidate documents found</h3>
           <p>Add your CV and optional base cover letter under <code>data/</code> first.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('build_profile_page') }}">Open Build Profile</a>
+            <a class="secondary-button" href="{{ request.url_for('dashboard') }}">Open Overview</a>
+          </div>
         </div>
       {% elif not view.has_jobs_files %}
         <div class="empty-state">
           <h3>No jobs files found</h3>
           <p>Import or fetch jobs into <code>outputs/</code> first so the selected ranking can be resolved back to a full job record.</p>
+          <div class="button-row">
+            <a class="primary-button" href="{{ request.url_for('job_sources') }}">Open Job Sources</a>
+            <a class="secondary-button" href="{{ request.url_for('rankings') }}">Back to Rankings</a>
+          </div>
         </div>
       {% else %}
         <form method="post" class="form-stack">
           <input type="hidden" name="ranking_file" value="{{ view.selected_ranking_file or '' }}">
           <input type="hidden" name="job_id" value="{{ view.selected_job.job_id or '' }}">
 
-          <div class="callout">
-            <p><strong>Selected job:</strong> {{ view.selected_job.job_title }} at {{ view.selected_job.company }}</p>
-            <p><strong>Location:</strong> {{ view.selected_job.location or "Unknown" }}</p>
-            <p><strong>Score:</strong> {{ view.selected_job.score }}</p>
+          <div class="feature-callout">
+            <div class="feature-callout__body">
+              <p class="eyebrow">Selected Job</p>
+              <h3>{{ view.selected_job.job_title }} at {{ view.selected_job.company }}</h3>
+              <p>Start with a plan before rewriting the resume. This keeps the draft grounded in the highest-impact evidence and keywords.</p>
+              <div class="feature-callout__meta">
+                <span class="meta-pill">Score {{ view.selected_job.score }}</span>
+                <span class="meta-pill">{{ view.selected_job.location or "Unknown location" }}</span>
+              </div>
+            </div>
+            {% if view.selected_job.job_url %}
+              <div class="button-row">
+                <a class="secondary-button" href="{{ view.selected_job.job_url }}" target="_blank" rel="noreferrer">Open Listing</a>
+              </div>
+            {% endif %}
           </div>
 
           <label class="field">
@@ -75,10 +101,20 @@
             </select>
           </label>
 
-          <label class="field">
-            <span>Output JSON path</span>
-            <input type="text" name="output_path" value="{{ view.selected_output }}" required>
-          </label>
+          <details class="form-disclosure">
+            <summary class="form-disclosure__summary">
+              <div class="form-disclosure__intro">
+                <p class="eyebrow">Advanced Output</p>
+                <p>Leave the default save path unless you want this tailoring plan written somewhere specific.</p>
+              </div>
+            </summary>
+            <div class="form-disclosure__body">
+              <label class="field">
+                <span>Output JSON path</span>
+                <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+              </label>
+            </div>
+          </details>
 
           <button class="primary-button" type="submit">Build Tailoring Plan</button>
         </form>
@@ -106,9 +142,10 @@
           Saved to <code>{{ view.result.output_path_relative }}</code>.
           <a href="{{ request.url_for('run_detail', run_id=view.result.run_manifest.id) }}">Open recorded run</a>
         </p>
-        <p>
-          <a href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.selected_job.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Generate a tailored draft from this plan</a>
-        </p>
+      </div>
+      <div class="button-row">
+        <a class="primary-button" href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.selected_job.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Build Tailored Draft</a>
+        <a class="secondary-button" href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ view.selected_job.job_id }}&mode=rule_based{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Draft Cover Letter</a>
       </div>
       <dl class="detail-grid">
         <div>

@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.10"]
 release = ["build>=1.2.2"]
 web = [
   "fastapi>=0.115",
@@ -46,3 +46,19 @@ include = ["offerquest*"]
 [tool.setuptools.package-data]
 "offerquest.web" = ["templates/*.html", "static/*.css", "static/*.svg"]
 "offerquest.config" = ["*.json"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true

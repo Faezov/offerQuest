@@ -11,7 +11,7 @@ from .cover_letter import (
     join_human_list,
     lower_keywords,
 )
-from .extractors import read_document_text
+from .extractors import read_document_text, read_optional_text
 from .jobs import job_record_to_text
 from .profile import build_candidate_profile, split_cv_sections
 
@@ -657,12 +657,6 @@ def dedupe_preserve_order(values: list[str]) -> list[str]:
         seen.add(cleaned)
         result.append(cleaned)
     return result
-
-
-def read_optional_text(path: str | Path | None) -> str:
-    if path is None:
-        return ""
-    return read_document_text(path)
 
 
 def collect_supported_resume_titles(profile: dict[str, Any]) -> list[str]:

@@ -6,15 +6,22 @@ from pathlib import Path
 from . import config as _config
 from .extractors import read_document_text
 from .jobs import infer_manual_title, job_record_to_text
-from .matching import MatchableText, contains_any_keyword, contains_keyword, find_pattern_matches, prepare_matchable_text
+from .matching import (
+    MatchableText,
+    contains_any_keyword,
+    contains_keyword,
+    find_pattern_matches,
+    prepare_matchable_text,
+)
+from .types import ScoredJob
 
 
-def score_job_file(job_path: str | Path, profile: dict) -> dict:
+def score_job_file(job_path: str | Path, profile: dict) -> ScoredJob:
     job_text = read_document_text(job_path)
     return score_job_text(job_text, profile, source_name=str(job_path))
 
 
-def score_job_record(job_record: dict, profile: dict) -> dict:
+def score_job_record(job_record: dict, profile: dict) -> ScoredJob:
     result = score_job_text(
         job_record_to_text(job_record),
         profile,
@@ -37,7 +44,7 @@ def score_job_record(job_record: dict, profile: dict) -> dict:
     return result
 
 
-def score_job_text(job_text: str, profile: dict, *, source_name: str | None = None) -> dict:
+def score_job_text(job_text: str, profile: dict, *, source_name: str | None = None) -> ScoredJob:
     cfg = _config.active()
     prepared = prepare_matchable_text(job_text)
     job_title = infer_job_title(job_text)
@@ -101,12 +108,12 @@ def score_job_text(job_text: str, profile: dict, *, source_name: str | None = No
     }
 
 
-def rank_job_files(job_paths: list[Path], profile: dict) -> list[dict]:
+def rank_job_files(job_paths: list[Path], profile: dict) -> list[ScoredJob]:
     ranked = [score_job_file(path, profile) for path in job_paths]
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
 
 
-def rank_job_records(job_records: list[dict], profile: dict) -> list[dict]:
+def rank_job_records(job_records: list[dict], profile: dict) -> list[ScoredJob]:
     ranked = [score_job_record(record, profile) for record in job_records]
     return sorted(ranked, key=lambda item: item["score"], reverse=True)
 

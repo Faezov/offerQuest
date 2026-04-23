@@ -8,8 +8,8 @@ from typing import Any
 from .ats import build_ats_report
 from .docx import export_document_as_docx
 from .errors import ProfileValidationError
-from .extractors import read_document_text
-from .jobs import find_job_record, index_job_records, job_record_to_text, read_job_records
+from .extractors import read_document_text, read_optional_text
+from .jobs import index_job_records, job_record_to_text, read_job_records
 from .ollama import DEFAULT_OLLAMA_BASE_URL, generate_structured_response
 from .profile import build_candidate_profile, looks_like_location_line
 from .scoring import infer_job_title
@@ -317,8 +317,6 @@ def build_cover_letter_text(*, profile: dict, ats_report: dict, job_context: dic
     validate_cover_letter_profile(profile)
     job_title = job_context.get("job_title") or "the advertised role"
     company = job_context.get("company") or "your team"
-    location = profile.get("location")
-    years = profile.get("years_experience")
 
     matched_keywords = ats_report["keyword_coverage"]["matched_keywords"][:4]
     missing_keywords = ats_report["required_keywords"]["missing"][:2]
@@ -616,12 +614,6 @@ def join_human_list(values: list[str]) -> str:
     if len(values) == 2:
         return f"{values[0]} and {values[1]}"
     return ", ".join(values[:-1]) + f", and {values[-1]}"
-
-
-def read_optional_text(path: str | Path | None) -> str:
-    if path is None:
-        return ""
-    return read_document_text(path)
 
 
 def write_cover_letter(path: str | Path, payload: dict) -> None:

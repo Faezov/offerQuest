@@ -12,7 +12,6 @@ from typing import Any
 from .. import config as _config
 from ..errors import OfferQuestError
 from ..ollama import DEFAULT_OLLAMA_BASE_URL
-from ..workspace import ProjectState
 from ..workbench import (
     build_artifact_preview,
     build_cover_letter_compare_view,
@@ -28,8 +27,8 @@ from ..workbench import (
     build_run_detail_view,
     build_runs_view,
     run_adzuna_credentials_save,
-    run_cover_letter_compare,
     run_cover_letter_build,
+    run_cover_letter_compare,
     run_job_source_delete,
     run_job_source_save,
     run_job_source_toggle,
@@ -42,6 +41,7 @@ from ..workbench import (
     run_resume_tailored_draft_build,
     run_resume_tailoring_plan_build,
 )
+from ..workspace import ProjectState
 
 LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 logger = logging.getLogger(__name__)
@@ -202,9 +202,7 @@ def create_app(
 ) -> Any:
     try:
         from fastapi import FastAPI, HTTPException, Request
-        from fastapi.responses import FileResponse
-        from fastapi.responses import HTMLResponse
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
         from fastapi.templating import Jinja2Templates
     except ImportError as exc:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
@@ -17,6 +18,7 @@ class MatchableText:
         return " ".join(self.tokens)
 
 
+@lru_cache(maxsize=256)
 def prepare_matchable_text(text: str) -> MatchableText:
     tokens = tuple(TOKEN_RE.findall(text.lower()))
     return MatchableText(

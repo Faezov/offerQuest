@@ -27,6 +27,7 @@ from .jobs import (
     resolve_adzuna_credentials,
     write_job_records,
 )
+from . import __version__
 from .ollama import DEFAULT_OLLAMA_BASE_URL, get_ollama_status
 from .profile import build_candidate_profile, build_profile_from_files
 from .reranking import rerank_job_files, rerank_job_records
@@ -38,6 +39,11 @@ SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="OfferQuest job-fit tooling")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"OfferQuest {__version__}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     build_profile_parser = subparsers.add_parser(

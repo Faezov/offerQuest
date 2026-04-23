@@ -157,10 +157,15 @@ def extract_legacy_word_text(path: Path) -> str:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=30,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
                 "The `strings` command is required to extract legacy Word documents."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"`strings` timed out while extracting {path}."
             ) from exc
 
         if result.stdout:

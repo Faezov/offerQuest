@@ -466,23 +466,16 @@ def annotate_job_records(
     *,
     extra_metadata: dict[str, Any],
 ) -> list[dict]:
-    if not extra_metadata:
-        return [normalize_job_record(record) for record in records]
-
+    extra = drop_none(extra_metadata) if extra_metadata else {}
     annotated: list[dict] = []
     for record in records:
         normalized = normalize_job_record(record)
-        annotated.append(
-            normalize_job_record(
-                {
-                    **normalized,
-                    "metadata": {
-                        **(normalized.get("metadata") or {}),
-                        **drop_none(extra_metadata),
-                    },
-                }
-            )
-        )
+        if extra:
+            normalized["metadata"] = {
+                **(normalized.get("metadata") or {}),
+                **extra,
+            }
+        annotated.append(normalized)
     return annotated
 
 

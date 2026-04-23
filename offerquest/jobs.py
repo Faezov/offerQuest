@@ -658,24 +658,20 @@ def clean_text(value: str) -> str:
 
 
 def looks_like_location(value: str) -> bool:
+    from . import config as _config
+
     lowered = value.lower()
-    location_terms = (
-        "sydney",
-        "melbourne",
-        "brisbane",
-        "perth",
-        "canberra",
-        "nsw",
-        "victoria",
-        "queensland",
-        "australia",
-        "remote",
-        "hybrid",
-        "usa",
-        "uk",
-        "london",
-    )
-    return any(term in lowered for term in location_terms)
+    cfg = _config.active()
+    for term in cfg.location_primary_terms:
+        if term in lowered:
+            return True
+    for term in cfg.location_remote_terms:
+        if term in lowered:
+            return True
+    for term in cfg.location_secondary_terms:
+        if term in lowered:
+            return True
+    return False
 
 
 def now_iso() -> str:

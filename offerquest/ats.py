@@ -2,56 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import config as _config
 from .extractors import read_document_text
 from .jobs import job_record_to_text
 from .matching import contains_any_keyword, contains_keyword
-from .profile import (
-    DOMAIN_PATTERNS,
-    SKILL_PATTERNS,
-    build_candidate_profile,
-    split_cv_sections,
-)
+from .profile import build_candidate_profile, split_cv_sections
 from .scoring import infer_job_title, score_job_text, score_title_alignment
 
-ATS_EXTRA_PATTERNS = {
-    "Agile": ["agile", "scrum", "kanban"],
-    "Business intelligence": ["business intelligence", "bi analyst"],
-    "Cloud": ["cloud"],
-    "Dashboards": ["dashboard", "dashboards"],
-    "Data governance": ["data governance", "governance"],
-    "Data warehousing": ["data warehouse", "data warehousing", "warehouse"],
-    "ETL": ["etl", "extract transform load"],
-    "Finance": ["finance", "financial", "investment"],
-    "Power BI": ["power bi", "powerbi"],
-    "Stakeholder management": ["stakeholder", "stakeholders"],
-    "Tableau": ["tableau"],
-}
 
-ATS_PATTERNS = {
-    **SKILL_PATTERNS,
-    **DOMAIN_PATTERNS,
-    **ATS_EXTRA_PATTERNS,
-}
-
-ATS_SECTION_HEADINGS = [
-    "Professional Summary",
-    "Core Skills",
-    "Professional Experience",
-    "Education",
-]
-
-REQUIRED_MARKERS = (
-    "required",
-    "must",
-    "essential",
-    "need",
-    "needs",
-    "seeking",
-    "looking for",
-    "experience with",
-    "proficient in",
-    "strong",
-)
+def _ats_patterns() -> dict[str, list[str]]:
+    cfg = _config.active()
+    return {**cfg.skill_patterns, **cfg.domain_patterns, **cfg.ats_extra_patterns}
 
 
 def ats_check_job_file(
@@ -128,12 +89,13 @@ def build_ats_report(
         job_title=job_title,
     )
 
+    cfg = _config.active()
     fit_snapshot = score_job_text(job_text, cv_profile)
     title_alignment_score = score_title_alignment(
         job_title,
         [title.lower() for title in cv_profile.get("search_focus", {}).get("priority_titles", [])],
     )[0]
-    section_score = round((len(section_checks["present"]) / len(ATS_SECTION_HEADINGS)) * 10)
+    section_score = round((len(section_checks["present"]) / len(cfg.ats_section_headings)) * 10)
     contact_score = sum(
         [
             2 if contact_checks["name_detected"] else 0,
@@ -146,8 +108,8 @@ def build_ats_report(
     ats_score = round(
         min(
             100,
-            keyword_analysis["coverage_percent"] * 0.35
-            + keyword_analysis["required_coverage_percent"] * 0.25
+            keyword_analysis["coverage_percent"] * cfg.ats_keyword_weight
+            + keyword_analysis["required_coverage_percent"] * cfg.ats_required_weight
             + title_alignment_score
             + section_score
             + contact_score
@@ -183,17 +145,18 @@ def build_ats_report(
 
 
 def analyze_keyword_coverage(cv_text: str, job_text: str, *, job_title: str) -> dict:
+    cfg = _config.active()
     lines = [line.strip().lower() for line in job_text.splitlines() if line.strip()]
 
     entries: list[dict] = []
-    for label, patterns in ATS_PATTERNS.items():
+    for label, patterns in _ats_patterns().items():
         if not contains_any_keyword(job_text, patterns):
             continue
 
         in_title = contains_keyword(job_title, label) or contains_any_keyword(job_title, patterns)
         required = any(
             contains_any_keyword(line, patterns)
-            and any(marker in line for marker in REQUIRED_MARKERS)
+            and any(marker in line for marker in cfg.ats_required_markers)
             for line in lines
         ) or in_title
         matched = contains_any_keyword(cv_text, patterns)
@@ -258,9 +221,10 @@ def dedupe_keyword_entries(entries: list[dict]) -> list[dict]:
 
 
 def analyze_sections(cv_text: str) -> dict:
+    headings = _config.active().ats_section_headings
     sections = split_cv_sections(cv_text)
-    present = [heading for heading in ATS_SECTION_HEADINGS if sections.get(heading)]
-    missing = [heading for heading in ATS_SECTION_HEADINGS if heading not in present]
+    present = [heading for heading in headings if sections.get(heading)]
+    missing = [heading for heading in headings if heading not in present]
     return {
         "present": present,
         "missing": missing,
@@ -371,7 +335,7 @@ def suggest_resume_title(job_title: str, profile: dict) -> str:
     priority_titles = profile.get("search_focus", {}).get("priority_titles", [])
     if priority_titles:
         return priority_titles[0]
-    return "Senior Data Analyst"
+    return _config.active().fallback_resume_title
 
 
 def describe_ats_score(score: int) -> str:

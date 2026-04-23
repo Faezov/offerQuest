@@ -28,3 +28,4 @@ include = ["offerquest*"]
 
 [tool.setuptools.package-data]
 "offerquest.web" = ["templates/*.html", "static/*.css"]
+"offerquest.config" = ["*.json"]

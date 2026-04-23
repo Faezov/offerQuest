@@ -261,11 +261,6 @@ def extract_years_experience(text: str) -> int | None:
     plus_match = re.search(r"(\d+)\+\s*years", text, re.IGNORECASE)
     if plus_match:
         return int(plus_match.group(1))
-
-    years = [int(value) for value in re.findall(r"\b(20\d{2})\b", text)]
-    if years:
-        return max(years) - min(years)
-
     return None
 
 
@@ -286,13 +281,13 @@ def detect_pattern_matches(text: str, patterns: dict[str, list[str]]) -> list[st
 
 def extract_target_role(cover_letter_text: str) -> str | None:
     match = re.search(
-        r"position of\s+(.+?)(?:\.|$)",
+        r"position of\s+(.{1,80}?)(?:\.|$)",
         cover_letter_text,
         re.IGNORECASE,
     )
-    if match:
-        return match.group(1).strip()
-    return None
+    if not match:
+        return None
+    return match.group(1).strip() or None
 
 
 def extract_recent_roles(experience_lines: list[str]) -> list[dict[str, str]]:

@@ -55,7 +55,7 @@ def clean_export_lines(lines: list[str]) -> list[str]:
             continue
         if line in EXPORT_NOISE_LINES:
             continue
-        if line.endswith("Curriculum vitae"):
+        if line.lower().endswith("curriculum vitae"):
             continue
         if looks_like_binary_noise(line):
             continue

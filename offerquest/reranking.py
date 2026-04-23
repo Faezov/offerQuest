@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,12 @@ def rerank_scored_candidates(
     top_n: int,
 ) -> list[dict[str, Any]]:
     rerank_window = min(max(top_n, 0), len(scored_candidates))
+    if top_n > len(scored_candidates):
+        warnings.warn(
+            f"Requested top_n={top_n} exceeds available candidates "
+            f"({len(scored_candidates)}); reranking all of them.",
+            stacklevel=2,
+        )
     reranked_window: list[dict[str, Any]] = []
     untouched_tail: list[dict[str, Any]] = []
 

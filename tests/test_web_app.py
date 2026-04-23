@@ -1,10 +1,13 @@
+import asyncio
 import io
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import urlencode
 
 from offerquest.web.app import (
     AUTO_PORT,
@@ -16,6 +19,106 @@ from offerquest.web.app import (
     resolve_port,
     validate_required_form_fields,
 )
+
+
+@dataclass(frozen=True)
+class _ASGIResponse:
+    status_code: int
+    headers: dict[str, str]
+    body: bytes
+
+    @property
+    def text(self) -> str:
+        return self.body.decode("utf-8", errors="replace")
+
+
+async def _send_asgi_request(
+    app: object,
+    method: str,
+    path: str,
+    *,
+    data: dict[str, str] | None = None,
+) -> _ASGIResponse:
+    body = urlencode(data).encode("utf-8") if data else b""
+    raw_path, _, query = path.partition("?")
+    messages: list[dict[str, object]] = []
+    request_sent = False
+
+    async def receive() -> dict[str, object]:
+        nonlocal request_sent
+        if not request_sent:
+            request_sent = True
+            return {
+                "type": "http.request",
+                "body": body,
+                "more_body": False,
+            }
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, object]) -> None:
+        messages.append(message)
+
+    headers = [(b"host", b"testserver")]
+    if data is not None:
+        headers.extend(
+            [
+                (b"content-type", b"application/x-www-form-urlencoded"),
+                (b"content-length", str(len(body)).encode("ascii")),
+            ]
+        )
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method.upper(),
+        "scheme": "http",
+        "path": raw_path,
+        "raw_path": raw_path.encode("utf-8"),
+        "query_string": query.encode("utf-8"),
+        "headers": headers,
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+        "root_path": "",
+    }
+
+    await app(scope, receive, send)  # type: ignore[misc]
+
+    status_code = 500
+    response_headers: dict[str, str] = {}
+    response_body = bytearray()
+    for message in messages:
+        message_type = message.get("type")
+        if message_type == "http.response.start":
+            status_code = int(message.get("status", 500))
+            response_headers = {
+                key.decode("latin-1"): value.decode("latin-1")
+                for key, value in message.get("headers", [])
+            }
+        if message_type == "http.response.body":
+            response_body.extend(message.get("body", b""))
+
+    return _ASGIResponse(
+        status_code=status_code,
+        headers=response_headers,
+        body=bytes(response_body),
+    )
+
+
+class _TestClient:
+    def __init__(self, app: object) -> None:
+        self._app = app
+
+    def get(self, path: str) -> _ASGIResponse:
+        return asyncio.run(_send_asgi_request(self._app, "GET", path))
+
+    def post(self, path: str, *, data: dict[str, str] | None = None) -> _ASGIResponse:
+        return asyncio.run(_send_asgi_request(self._app, "POST", path, data=data))
+
+
+testclient_module = ModuleType("fastapi.testclient")
+testclient_module.TestClient = _TestClient
+sys.modules["fastapi.testclient"] = testclient_module
 
 
 class WebAppTests(unittest.TestCase):
@@ -850,7 +953,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.documents.get_ollama_status",
                 return_value={
                     "reachable": False,
                     "command_available": True,
@@ -894,7 +997,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.documents.get_ollama_status",
                 return_value={
                     "reachable": True,
                     "command_available": True,
@@ -937,7 +1040,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.documents.get_ollama_status",
                 return_value={
                     "reachable": False,
                     "command_available": True,

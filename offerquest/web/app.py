@@ -11,7 +11,7 @@ from typing import Any
 
 from .. import config as _config
 from ..errors import OfferQuestError
-from ..ollama import DEFAULT_OLLAMA_BASE_URL
+from ..ollama import DEFAULT_OLLAMA_BASE_URL, RECOMMENDED_OLLAMA_MODELS
 from ..workbench import (
     build_artifact_preview,
     build_cover_letter_compare_view,
@@ -202,7 +202,7 @@ def create_app(
 ) -> Any:
     try:
         from fastapi import FastAPI, HTTPException, Request
-        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+        from fastapi.responses import HTMLResponse, JSONResponse, Response
         from fastapi.staticfiles import StaticFiles
         from fastapi.templating import Jinja2Templates
     except ImportError as exc:
@@ -221,6 +221,7 @@ def create_app(
 
     templates_dir = Path(__file__).with_name("templates")
     static_dir = Path(__file__).with_name("static")
+    favicon_svg = (static_dir / "favicon.svg").read_bytes()
 
     app = FastAPI(title="OfferQuest Workbench")
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -251,7 +252,7 @@ def create_app(
         custom_model: str | None,
     ) -> list[str]:
         if intent == "pull_recommended":
-            return list(build_ollama_setup_view(project_state, base_url=base_url)["recommended_models"])
+            return list(RECOMMENDED_OLLAMA_MODELS)
         if intent == "pull_missing_recommended":
             current_view = build_ollama_setup_view(
                 project_state,
@@ -408,11 +409,8 @@ def create_app(
         )
 
     @app.get("/favicon.ico", include_in_schema=False)
-    async def favicon() -> FileResponse:
-        return FileResponse(
-            static_dir / "favicon.svg",
-            media_type="image/svg+xml",
-        )
+    async def favicon() -> Response:
+        return Response(content=favicon_svg, media_type="image/svg+xml")
 
     @app.get("/runs", response_class=HTMLResponse)
     async def runs(request: Request) -> HTMLResponse:
@@ -728,7 +726,7 @@ def create_app(
 
         if intent == "save_source":
             try:
-                result = run_job_source_save(
+                source_result = run_job_source_save(
                     project_state,
                     source_form_data=source_form_data,
                 )
@@ -758,7 +756,7 @@ def create_app(
                         project_state,
                         refresh_config_path=config_path or None,
                         refresh_output_dir=output_dir or None,
-                        source_form_result=result,
+                        source_form_result=source_result,
                     ),
                 },
             )
@@ -783,7 +781,7 @@ def create_app(
                 )
 
             try:
-                result = (
+                source_result = (
                     run_job_source_delete(project_state, source_index=source_index)
                     if intent == "delete_source"
                     else run_job_source_toggle(project_state, source_index=source_index)
@@ -813,7 +811,7 @@ def create_app(
                         project_state,
                         refresh_config_path=config_path or None,
                         refresh_output_dir=output_dir or None,
-                        source_form_result=result,
+                        source_form_result=source_result,
                     ),
                 },
             )
@@ -846,7 +844,7 @@ def create_app(
                 )
 
             try:
-                result = run_refresh_jobs_build(
+                refresh_result = run_refresh_jobs_build(
                     project_state,
                     config_path=config_path,
                     output_dir=output_dir,
@@ -876,13 +874,13 @@ def create_app(
                         project_state,
                         refresh_config_path=config_path,
                         refresh_output_dir=output_dir,
-                        refresh_result=result,
+                        refresh_result=refresh_result,
                     ),
                 },
             )
 
         try:
-            result = run_adzuna_credentials_save(
+            credentials_result = run_adzuna_credentials_save(
                 app_id=app_id or None,
                 app_key=app_key or None,
             )
@@ -912,7 +910,7 @@ def create_app(
                         app_id=app_id or None,
                         refresh_config_path=config_path or None,
                         refresh_output_dir=output_dir or None,
-                        credentials_result=result,
+                        credentials_result=credentials_result,
                     ),
                 },
         )
@@ -941,7 +939,11 @@ def create_app(
         try:
             action_result: dict[str, Any] | None = None
             if intent == "pull_recommended":
-                models = list(build_ollama_setup_view(project_state, base_url=base_url)["recommended_models"])
+                models = resolve_ollama_action_models(
+                    intent=intent,
+                    base_url=base_url,
+                    custom_model=custom_model,
+                )
                 result = run_ollama_models_pull(
                     base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
                     models=models,
@@ -954,12 +956,11 @@ def create_app(
                     ],
                 }
             elif intent == "pull_missing_recommended":
-                current_view = build_ollama_setup_view(
-                    project_state,
+                models = resolve_ollama_action_models(
+                    intent=intent,
                     base_url=base_url,
                     custom_model=custom_model,
                 )
-                models = list(current_view["missing_recommended_models"])
                 if not models:
                     raise ValueError("All recommended models are already installed.")
                 result = run_ollama_models_pull(
@@ -974,9 +975,11 @@ def create_app(
                     ],
                 }
             elif intent == "pull_custom":
-                if not custom_model:
-                    raise ValueError("Custom model name is required.")
-                models = [custom_model]
+                models = resolve_ollama_action_models(
+                    intent=intent,
+                    base_url=base_url,
+                    custom_model=custom_model,
+                )
                 result = run_ollama_models_pull(
                     base_url=base_url or DEFAULT_OLLAMA_BASE_URL,
                     models=models,
@@ -1206,7 +1209,7 @@ def create_app(
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,
                 jobs_file=jobs_file,
-                job_id=job_id,
+                job_id=job_id or "",
                 output_path=output_path,
             )
         except (ValueError, OfferQuestError) as exc:
@@ -1299,7 +1302,7 @@ def create_app(
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,
                 jobs_file=jobs_file,
-                job_id=job_id,
+                job_id=job_id or "",
                 output_path=output_path,
                 export_docx=export_docx,
                 docx_output_path=docx_output_path,
@@ -1429,7 +1432,7 @@ def create_app(
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,
                 jobs_file=jobs_file,
-                job_id=job_id,
+                job_id=job_id or "",
                 output_path=output_path,
                 llm_model=llm_model,
                 llm_base_url=llm_base_url,
@@ -1564,7 +1567,7 @@ def create_app(
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,
                 jobs_file=jobs_file,
-                job_id=job_id,
+                job_id=job_id or "",
                 rule_based_output_path=rule_based_output_path,
                 llm_output_path=llm_output_path,
                 llm_model=llm_model,

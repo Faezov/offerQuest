@@ -9,6 +9,7 @@ import os
 import re
 import tempfile
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -653,7 +654,7 @@ def write_job_records(path: str | Path, records: list[dict]) -> None:
     tmp_path.replace(output_path)
 
 
-def collect_job_record_inputs(paths: list[str | Path]) -> list[dict]:
+def collect_job_record_inputs(paths: Sequence[str | Path]) -> list[dict]:
     record_sets: list[list[dict]] = []
     for raw_path in paths:
         path = Path(raw_path)

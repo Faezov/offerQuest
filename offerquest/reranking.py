@@ -19,7 +19,7 @@ def rerank_job_files(
     cover_letter_text: str = "",
     top_n: int = 20,
 ) -> list[dict[str, Any]]:
-    scored_candidates = [
+    scored_candidates: list[dict[str, Any]] = [
         {
             "result": score_job_file(path, profile),
             "job_text": read_document_text(path),
@@ -45,7 +45,7 @@ def rerank_job_records(
     cover_letter_text: str = "",
     top_n: int = 20,
 ) -> list[dict[str, Any]]:
-    scored_candidates = [
+    scored_candidates: list[dict[str, Any]] = [
         {
             "result": score_job_record(record, profile),
             "job_text": job_record_to_text(record),

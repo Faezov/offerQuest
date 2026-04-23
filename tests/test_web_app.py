@@ -159,8 +159,9 @@ class WebAppTests(unittest.TestCase):
             response = client.get("/job-sources")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Adzuna Credentials", response.text)
+        self.assertIn("Credentials and Provider Guide", response.text)
         self.assertIn("Configured Job Streams", response.text)
+        self.assertIn("Board token, not a private API key", response.text)
 
     def test_job_sources_submit_saves_credentials_file(self) -> None:
         try:
@@ -195,6 +196,106 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("Saved credentials file", response.text)
         self.assertIn("saved-app-id", saved_text)
         self.assertIn("saved-app-key", saved_text)
+
+    def test_job_sources_submit_refreshes_jobs(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+        from offerquest.workbench import BuildRefreshJobsResult
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (jobs_dir / "sources.json").write_text(
+                '{"sources": [{"name": "adzuna-reporting", "type": "adzuna", "what": "reporting analyst", "where": "Sydney", "output": "adzuna-reporting.jsonl"}]}',
+                encoding="utf-8",
+            )
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            refresh_result = BuildRefreshJobsResult(
+                summary={
+                    "source_count": 1,
+                    "merged_job_count": 12,
+                    "sources": [
+                        {
+                            "name": "adzuna-reporting",
+                            "job_count": 12,
+                            "output": "outputs/jobs/adzuna-reporting.jsonl",
+                        }
+                    ],
+                },
+                summary_path=root / "outputs" / "jobs" / "refresh-summary.json",
+                summary_path_relative="outputs/jobs/refresh-summary.json",
+                merged_output_path=root / "outputs" / "jobs" / "all.jsonl",
+                merged_output_path_relative="outputs/jobs/all.jsonl",
+                run_manifest={"id": "refresh-run-1"},
+            )
+
+            with patch(
+                "offerquest.web.app.run_refresh_jobs_build",
+                return_value=refresh_result,
+            ) as refresh_mock:
+                response = client.post(
+                    "/job-sources",
+                    data={
+                        "intent": "refresh_jobs",
+                        "config_path": "jobs/sources.json",
+                        "output_dir": "outputs/jobs",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(refresh_mock.call_count, 1)
+        self.assertIn("Refresh complete", response.text)
+        self.assertIn("Open recorded refresh run", response.text)
+
+    def test_job_sources_submit_saves_source_config(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+        from offerquest.workbench import SaveJobSourceConfigResult
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            save_result = SaveJobSourceConfigResult(
+                config_path=root / "jobs" / "sources.json",
+                config_path_relative="jobs/sources.json",
+                action="created",
+                source_name="manual",
+                source_count=1,
+            )
+
+            with patch(
+                "offerquest.web.app.run_job_source_save",
+                return_value=save_result,
+            ) as save_mock:
+                response = client.post(
+                    "/job-sources",
+                    data={
+                        "intent": "save_source",
+                        "source_name": "manual",
+                        "source_type": "manual",
+                        "source_enabled": "true",
+                        "source_output": "manual.jsonl",
+                        "manual_input_path": "jobs",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(save_mock.call_count, 1)
+        self.assertIn("Created", response.text)
+        self.assertIn("manual", response.text)
 
     def test_rerank_jobs_page_renders(self) -> None:
         try:

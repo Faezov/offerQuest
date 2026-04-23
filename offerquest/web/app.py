@@ -22,7 +22,11 @@ from ..workbench import (
     run_adzuna_credentials_save,
     run_cover_letter_compare,
     run_cover_letter_build,
+    run_job_source_delete,
+    run_job_source_save,
+    run_job_source_toggle,
     run_profile_build,
+    run_refresh_jobs_build,
     run_rerank_jobs_build,
     run_resume_tailored_draft_build,
     run_resume_tailoring_plan_build,
@@ -98,13 +102,21 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
         )
 
     @app.get("/job-sources", response_class=HTMLResponse)
-    async def job_sources(request: Request) -> HTMLResponse:
+    async def job_sources(
+        request: Request,
+        edit_source: int | None = None,
+        duplicate_source: int | None = None,
+    ) -> HTMLResponse:
         return render(
             request,
             "job_sources.html",
             {
                 "page_title": "Job Sources",
-                "view": build_job_sources_view(project_state),
+                "view": build_job_sources_view(
+                    project_state,
+                    edit_source_index=edit_source,
+                    duplicate_source_index=duplicate_source,
+                ),
             },
         )
 
@@ -278,8 +290,171 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
     @app.post("/job-sources", response_class=HTMLResponse)
     async def job_sources_submit(request: Request) -> HTMLResponse:
         form = await request.form()
+        intent = str(form.get("intent") or "save_credentials").strip()
         app_id = str(form.get("app_id") or "").strip()
         app_key = str(form.get("app_key") or "").strip()
+        config_path = str(form.get("config_path") or "").strip()
+        output_dir = str(form.get("output_dir") or "").strip()
+        source_form_data = {
+            "source_index": str(form.get("source_index") or "").strip(),
+            "name": str(form.get("source_name") or "").strip(),
+            "type": str(form.get("source_type") or "").strip(),
+            "enabled": str(form.get("source_enabled") or "").strip(),
+            "output": str(form.get("source_output") or "").strip(),
+            "what": str(form.get("adzuna_what") or "").strip(),
+            "where": str(form.get("adzuna_where") or "").strip(),
+            "country": str(form.get("adzuna_country") or "").strip(),
+            "pages": str(form.get("adzuna_pages") or "").strip(),
+            "results_per_page": str(form.get("adzuna_results_per_page") or "").strip(),
+            "board_token": str(form.get("greenhouse_board_token") or "").strip(),
+            "input_path": str(form.get("manual_input_path") or "").strip(),
+        }
+        source_index_raw = str(form.get("source_index") or "").strip()
+
+        if intent == "save_source":
+            try:
+                result = run_job_source_save(
+                    project_state,
+                    source_form_data=source_form_data,
+                )
+            except (OSError, ValueError) as exc:
+                return render(
+                    request,
+                    "job_sources.html",
+                    {
+                        "page_title": "Job Sources",
+                        "view": build_job_sources_view(
+                            project_state,
+                            app_id=app_id or None,
+                            refresh_config_path=config_path or None,
+                            refresh_output_dir=output_dir or None,
+                            source_form_data=source_form_data,
+                            source_form_error=str(exc),
+                        ),
+                    },
+                )
+
+            return render(
+                request,
+                "job_sources.html",
+                {
+                    "page_title": "Job Sources",
+                    "view": build_job_sources_view(
+                        project_state,
+                        refresh_config_path=config_path or None,
+                        refresh_output_dir=output_dir or None,
+                        source_form_result=result,
+                    ),
+                },
+            )
+
+        if intent in {"delete_source", "toggle_source"}:
+            try:
+                source_index = int(source_index_raw)
+            except ValueError:
+                return render(
+                    request,
+                    "job_sources.html",
+                    {
+                        "page_title": "Job Sources",
+                        "view": build_job_sources_view(
+                            project_state,
+                            app_id=app_id or None,
+                            refresh_config_path=config_path or None,
+                            refresh_output_dir=output_dir or None,
+                            source_form_error="Selected source index must be a whole number.",
+                        ),
+                    },
+                )
+
+            try:
+                result = (
+                    run_job_source_delete(project_state, source_index=source_index)
+                    if intent == "delete_source"
+                    else run_job_source_toggle(project_state, source_index=source_index)
+                )
+            except (OSError, ValueError) as exc:
+                return render(
+                    request,
+                    "job_sources.html",
+                    {
+                        "page_title": "Job Sources",
+                        "view": build_job_sources_view(
+                            project_state,
+                            app_id=app_id or None,
+                            refresh_config_path=config_path or None,
+                            refresh_output_dir=output_dir or None,
+                            source_form_error=str(exc),
+                        ),
+                    },
+                )
+
+            return render(
+                request,
+                "job_sources.html",
+                {
+                    "page_title": "Job Sources",
+                    "view": build_job_sources_view(
+                        project_state,
+                        refresh_config_path=config_path or None,
+                        refresh_output_dir=output_dir or None,
+                        source_form_result=result,
+                    ),
+                },
+            )
+
+        if intent == "refresh_jobs":
+            if not config_path or not output_dir:
+                return render(
+                    request,
+                    "job_sources.html",
+                    {
+                        "page_title": "Job Sources",
+                        "view": build_job_sources_view(
+                            project_state,
+                            app_id=app_id or None,
+                            refresh_config_path=config_path or None,
+                            refresh_output_dir=output_dir or None,
+                            refresh_error="Config path and output directory are both required.",
+                        ),
+                    },
+                )
+
+            try:
+                result = run_refresh_jobs_build(
+                    project_state,
+                    config_path=config_path,
+                    output_dir=output_dir,
+                )
+            except (OSError, ValueError) as exc:
+                return render(
+                    request,
+                    "job_sources.html",
+                    {
+                        "page_title": "Job Sources",
+                        "view": build_job_sources_view(
+                            project_state,
+                            app_id=app_id or None,
+                            refresh_config_path=config_path,
+                            refresh_output_dir=output_dir,
+                            refresh_error=str(exc),
+                        ),
+                    },
+                )
+
+            return render(
+                request,
+                "job_sources.html",
+                {
+                    "page_title": "Job Sources",
+                    "view": build_job_sources_view(
+                        project_state,
+                        refresh_config_path=config_path,
+                        refresh_output_dir=output_dir,
+                        refresh_result=result,
+                    ),
+                },
+            )
 
         try:
             result = run_adzuna_credentials_save(
@@ -295,7 +470,9 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
                     "view": build_job_sources_view(
                         project_state,
                         app_id=app_id or None,
-                        error=str(exc),
+                        refresh_config_path=config_path or None,
+                        refresh_output_dir=output_dir or None,
+                        credentials_error=str(exc),
                     ),
                 },
             )
@@ -303,13 +480,16 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
         return render(
             request,
             "job_sources.html",
-            {
-                "page_title": "Job Sources",
-                "view": build_job_sources_view(
-                    project_state,
-                    result=result,
-                ),
-            },
+                {
+                    "page_title": "Job Sources",
+                    "view": build_job_sources_view(
+                        project_state,
+                        app_id=app_id or None,
+                        refresh_config_path=config_path or None,
+                        refresh_output_dir=output_dir or None,
+                        credentials_result=result,
+                    ),
+                },
         )
 
     @app.post("/rerank-jobs/new", response_class=HTMLResponse)

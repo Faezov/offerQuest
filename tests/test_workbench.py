@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from offerquest.workbench import (
     build_cover_letter_compare_view,
     build_cover_letter_form_view,
     build_dashboard_view,
+    build_job_sources_view,
     build_latest_rankings_view,
     build_profile_form_view,
     build_rerank_jobs_form_view,
@@ -20,6 +22,10 @@ from offerquest.workbench import (
     build_run_detail_view,
     build_runs_view,
     resolve_workspace_input_path,
+    run_job_source_delete,
+    run_job_source_save,
+    run_job_source_toggle,
+    run_refresh_jobs_build,
     run_cover_letter_compare,
     run_cover_letter_build,
     run_profile_build,
@@ -121,6 +127,138 @@ class WorkbenchTests(unittest.TestCase):
         self.assertIn("data/CV_sample.docx", view["documents"])
         self.assertEqual(view["selected_cv"], "data/CV_sample.docx")
 
+    def test_build_job_sources_view_prefills_refresh_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (jobs_dir / "sources.json").write_text(
+                '{"sources": [{"name": "adzuna-reporting", "type": "adzuna", "what": "reporting analyst", "where": "Sydney", "output": "adzuna-reporting.jsonl"}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            with patch.dict(
+                os.environ,
+                {"OFFERQUEST_ADZUNA_ENV_FILE": str(root / "missing-adzuna.env")},
+                clear=True,
+            ):
+                view = build_job_sources_view(state)
+
+        self.assertEqual(view["selected_refresh_config_path"], "jobs/sources.json")
+        self.assertEqual(view["selected_refresh_output_dir"], "outputs/jobs")
+        self.assertEqual(view["source_summary"]["source_count"], 1)
+        self.assertEqual(view["source_summary"]["adzuna_count"], 1)
+        self.assertTrue(view["credentials_panel_open"])
+
+    def test_build_job_sources_view_prefills_edit_form(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (jobs_dir / "sources.json").write_text(
+                '{"sources": [{"name": "manual", "type": "manual", "input_path": "jobs", "output": "manual.jsonl"}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            view = build_job_sources_view(state, edit_source_index=0)
+
+        self.assertEqual(view["source_form_mode"], "edit")
+        self.assertEqual(view["source_form"]["name"], "manual")
+        self.assertEqual(view["source_form"]["input_path"], "jobs")
+
+    def test_run_job_source_save_creates_source_and_syncs_merge_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            state = ProjectState.from_root(root)
+
+            result = run_job_source_save(
+                state,
+                source_form_data={
+                    "source_index": "",
+                    "name": "greenhouse-example",
+                    "type": "greenhouse",
+                    "enabled": "true",
+                    "output": "greenhouse-example.jsonl",
+                    "what": "",
+                    "where": "",
+                    "country": "",
+                    "pages": "",
+                    "results_per_page": "",
+                    "board_token": "example",
+                    "input_path": "",
+                },
+            )
+
+            saved_payload = json.loads((root / "jobs" / "sources.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result.action, "created")
+        self.assertEqual(result.source_name, "greenhouse-example")
+        self.assertEqual(saved_payload["sources"][0]["board_token"], "example")
+        self.assertEqual(saved_payload["merge"]["inputs"], ["greenhouse-example.jsonl"])
+
+    def test_run_job_source_save_rejects_duplicate_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (jobs_dir / "sources.json").write_text(
+                '{"sources": [{"name": "manual", "type": "manual", "input_path": "jobs", "output": "shared.jsonl"}]}',
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            with self.assertRaisesRegex(ValueError, "Output filenames must be unique"):
+                run_job_source_save(
+                    state,
+                    source_form_data={
+                        "source_index": "",
+                        "name": "manual-copy",
+                        "type": "manual",
+                        "enabled": "true",
+                        "output": "shared.jsonl",
+                        "what": "",
+                        "where": "",
+                        "country": "",
+                        "pages": "",
+                        "results_per_page": "",
+                        "board_token": "",
+                        "input_path": "jobs",
+                    },
+                )
+
+    def test_run_job_source_toggle_and_delete_update_merge_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            (jobs_dir / "sources.json").write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {"name": "a", "type": "manual", "input_path": "jobs", "output": "a.jsonl"},
+                            {"name": "b", "type": "manual", "input_path": "jobs", "output": "b.jsonl"},
+                        ],
+                        "merge": {"enabled": True, "inputs": ["a.jsonl", "b.jsonl"], "output": "all.jsonl"},
+                        "summary_output": "refresh-summary.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            state = ProjectState.from_root(root)
+            toggle_result = run_job_source_toggle(state, source_index=1)
+            toggled_payload = json.loads((root / "jobs" / "sources.json").read_text(encoding="utf-8"))
+            delete_result = run_job_source_delete(state, source_index=0)
+            deleted_payload = json.loads((root / "jobs" / "sources.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(toggle_result.action, "disabled")
+        self.assertEqual(toggled_payload["merge"]["inputs"], ["a.jsonl"])
+        self.assertEqual(delete_result.action, "deleted")
+        self.assertEqual(deleted_payload["sources"][0]["name"], "b")
+        self.assertEqual(deleted_payload["merge"]["inputs"], [])
+
     def test_run_profile_build_writes_output_and_records_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -148,6 +286,59 @@ class WorkbenchTests(unittest.TestCase):
             self.assertTrue(result.output_path.exists())
             self.assertEqual(result.profile["name"], "Jane Doe")
             self.assertEqual(result.run_manifest["workflow"], "build-profile")
+
+    def test_run_refresh_jobs_build_records_run_and_summary_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            outputs_jobs_dir = root / "outputs" / "jobs"
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            outputs_jobs_dir.mkdir(parents=True, exist_ok=True)
+            config_path = jobs_dir / "sources.json"
+            config_path.write_text('{"sources": []}', encoding="utf-8")
+
+            refresh_summary = {
+                "refreshed_at": "2026-04-23T12:00:00Z",
+                "config_path": "jobs/sources.json",
+                "output_dir": "outputs/jobs",
+                "source_count": 2,
+                "sources": [
+                    {
+                        "name": "adzuna-reporting",
+                        "type": "adzuna",
+                        "job_count": 12,
+                        "output": "outputs/jobs/adzuna-reporting.jsonl",
+                    },
+                    {
+                        "name": "manual",
+                        "type": "manual",
+                        "job_count": 3,
+                        "output": "outputs/jobs/manual.jsonl",
+                    },
+                ],
+                "merge_enabled": True,
+                "merged_output": "outputs/jobs/all.jsonl",
+                "merged_job_count": 15,
+                "summary_output": "outputs/jobs/refresh-summary.json",
+            }
+
+            state = ProjectState.from_root(root)
+            with patch(
+                "offerquest.workbench.refresh_job_sources",
+                return_value=refresh_summary,
+            ) as refresh_mock:
+                result = run_refresh_jobs_build(
+                    state,
+                    config_path="jobs/sources.json",
+                    output_dir="outputs/jobs",
+                )
+
+        self.assertEqual(refresh_mock.call_count, 1)
+        self.assertEqual(result.summary["merged_job_count"], 15)
+        self.assertEqual(result.summary_path_relative, "outputs/jobs/refresh-summary.json")
+        self.assertEqual(result.merged_output_path_relative, "outputs/jobs/all.jsonl")
+        self.assertEqual(result.run_manifest["workflow"], "refresh-jobs")
+        self.assertEqual(len(result.run_manifest["artifacts"]), 4)
 
     def test_resolve_workspace_input_path_rejects_paths_outside_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

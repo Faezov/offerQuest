@@ -1,112 +1,293 @@
 {% extends "base.html" %}
 
 {% block content %}
+  <section>
+    <details class="setup-disclosure" {% if view.credentials_panel_open %}open{% endif %}>
+      <summary class="setup-disclosure__summary">
+        <div class="setup-disclosure__intro">
+          <p class="eyebrow">Setup & Access</p>
+          <h2>Credentials and Provider Guide</h2>
+          <p>Keep source editing front and center, and open this only when you need Adzuna credentials or help finding provider values.</p>
+        </div>
+
+        <div class="setup-disclosure__meta">
+          <span class="status-chip {% if view.credentials.has_effective_credentials %}status-chip--live{% else %}status-chip--muted{% endif %}">
+            {{ "Adzuna Ready" if view.credentials.has_effective_credentials else "Adzuna Not Set" }}
+          </span>
+          <span class="meta-pill">{{ view.source_summary.source_count }} stream{{ "" if view.source_summary.source_count == 1 else "s" }}</span>
+        </div>
+      </summary>
+
+      <div class="setup-disclosure__body">
+        <div class="panel-grid">
+          <article class="panel">
+            <div class="panel__header">
+              <h3>Save Adzuna Credentials</h3>
+              <p>Store your Adzuna app id and app key once, then OfferQuest can reuse them for refreshes and direct Adzuna pulls.</p>
+            </div>
+
+            {% if view.credentials_error %}
+              <div class="callout callout--error">
+                <p>{{ view.credentials_error }}</p>
+              </div>
+            {% endif %}
+
+            {% if view.credentials_result %}
+              <div class="callout">
+                <p><strong>Saved credentials file:</strong> <code>{{ view.credentials_result.credentials_path_display }}</code></p>
+                <p><strong>Stored app id:</strong> {{ view.credentials_result.saved_app_id_masked or "Not saved" }}</p>
+                <p><strong>Stored app key:</strong> {{ view.credentials_result.saved_app_key_masked or "Not saved" }}</p>
+              </div>
+            {% endif %}
+
+            {% if view.credentials.is_env_override %}
+              <div class="callout">
+                <p>Environment variables are currently overriding the saved file for this session. New saves still update the file, but the running process will keep using the environment values until those are removed.</p>
+              </div>
+            {% endif %}
+
+            <form method="post" class="form-stack">
+              <input type="hidden" name="intent" value="save_credentials">
+              <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
+              <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
+
+              <label class="field">
+                <span>Adzuna app id</span>
+                <input
+                  type="text"
+                  name="app_id"
+                  value="{{ view.entered_app_id }}"
+                  placeholder="{% if view.credentials.saved_app_id_masked %}Leave blank to keep {{ view.credentials.saved_app_id_masked }}{% else %}Paste your Adzuna app id{% endif %}"
+                  autocomplete="off"
+                >
+              </label>
+
+              <label class="field">
+                <span>Adzuna app key</span>
+                <input
+                  type="password"
+                  name="app_key"
+                  value=""
+                  placeholder="{% if view.credentials.saved_app_key_masked %}Leave blank to keep current saved key{% else %}Paste your Adzuna app key{% endif %}"
+                  autocomplete="off"
+                >
+              </label>
+
+              <div class="subsection">
+                <p class="subsection__summary">Credentials are written outside the repo to <code>{{ view.credentials_path_display }}</code>. After the first save, you can leave a field blank to keep the existing stored value.</p>
+              </div>
+
+              <button class="primary-button" type="submit">Save Adzuna Credentials</button>
+            </form>
+          </article>
+
+          <article class="panel">
+            <div class="panel__header">
+              <h3>How to Get These Values</h3>
+              <p>OfferQuest uses different provider access models, so this panel separates real secrets from public identifiers.</p>
+            </div>
+
+            <dl class="detail-grid">
+              <div>
+                <dt>Effective status</dt>
+                <dd>{{ "Configured" if view.credentials.has_effective_credentials else "Missing" }}</dd>
+              </div>
+              <div>
+                <dt>Effective source</dt>
+                <dd>{{ view.credentials.effective_source }}</dd>
+              </div>
+              <div>
+                <dt>Credentials file</dt>
+                <dd><code>{{ view.credentials_path_display }}</code></dd>
+              </div>
+              <div>
+                <dt>Configured streams</dt>
+                <dd>{{ view.source_summary.source_count }}</dd>
+              </div>
+            </dl>
+
+            {% if view.credentials.has_effective_credentials %}
+              <div class="callout">
+                <p><strong>Effective app id:</strong> {{ view.credentials.effective_app_id_masked }}</p>
+                <p><strong>Effective app key:</strong> {{ view.credentials.effective_app_key_masked }}</p>
+              </div>
+            {% else %}
+              <div class="empty-state compact">
+                <p>No usable Adzuna credentials found yet. That only blocks Adzuna-backed streams; Greenhouse and manual sources can still be configured.</p>
+              </div>
+            {% endif %}
+
+            <div class="advice-stack">
+              <div class="advice-card">
+                <p class="advice-card__eyebrow">Adzuna</p>
+                <h3>App id and app key</h3>
+                <ol class="step-list step-list--compact">
+                  <li>Create or sign in to an Adzuna developer account.</li>
+                  <li>Register your API use so Adzuna issues an <code>app_id</code> and <code>app_key</code>.</li>
+                  <li>Copy those values from your Adzuna account details or API dashboard and save them here.</li>
+                </ol>
+                <p class="subsection__summary">
+                  Official docs:
+                  <a href="https://developer.adzuna.com/overview" target="_blank" rel="noreferrer">Overview</a>,
+                  <a href="https://developer.adzuna.com/signup" target="_blank" rel="noreferrer">Register</a>,
+                  <a href="https://developer.adzuna.com/admin/access_details" target="_blank" rel="noreferrer">Account details</a>
+                </p>
+              </div>
+
+              <div class="advice-card">
+                <p class="advice-card__eyebrow">Greenhouse</p>
+                <h3>Board token, not a private API key</h3>
+                <p>OfferQuest reads Greenhouse jobs through the public Job Board API, so for this source type you usually need the job board token, not a secret key.</p>
+                <ol class="step-list step-list--compact">
+                  <li>In Greenhouse Recruiting, open <strong>Job Boards & Posts</strong> and edit the target board settings.</li>
+                  <li>Find the board URL. The last segment of <code>https://boards.greenhouse.io/example-company</code> is the token.</li>
+                  <li>Paste only that last segment into the <code>board_token</code> field for your Greenhouse source.</li>
+                </ol>
+                <p class="subsection__summary">
+                  Official docs:
+                  <a href="https://developers.greenhouse.io/job-board.html" target="_blank" rel="noreferrer">Job Board API</a>,
+                  <a href="https://support.greenhouse.io/hc/en-us/articles/5888210160155-Find-your-job-board-URL" target="_blank" rel="noreferrer">Find your job board URL</a>,
+                  <a href="https://support.greenhouse.io/hc/en-us/articles/360020776251-Job-board-URL-for-Greenhouse-hosted-job-board" target="_blank" rel="noreferrer">Board token guide</a>
+                </p>
+              </div>
+            </div>
+
+            <ul class="token-list">
+              <li>{{ view.source_summary.adzuna_count }} Adzuna</li>
+              <li>{{ view.source_summary.greenhouse_count }} Greenhouse</li>
+              <li>{{ view.source_summary.manual_count }} Manual</li>
+              {% if view.source_summary.other_count %}
+                <li>{{ view.source_summary.other_count }} Other</li>
+              {% endif %}
+            </ul>
+          </article>
+        </div>
+      </div>
+    </details>
+  </section>
+
   <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
-        <h2>Adzuna Credentials</h2>
-        <p>Save your Adzuna app id and app key once, then OfferQuest can use them automatically for job refreshes and direct Adzuna pulls.</p>
+        <h2>{{ "Edit Job Source" if view.source_form_mode == "edit" else "Add Job Source" }}</h2>
+        <p>Keep <code>jobs/sources.json</code> as the source of truth, but edit it through a structured form instead of hand-writing JSON.</p>
       </div>
 
-      {% if view.error %}
+      {% if view.source_form_notice %}
+        <div class="callout">
+          <p>{{ view.source_form_notice }}</p>
+        </div>
+      {% endif %}
+
+      {% if view.source_form_error %}
         <div class="callout callout--error">
-          <p>{{ view.error }}</p>
+          <p>{{ view.source_form_error }}</p>
         </div>
       {% endif %}
 
-      {% if view.result %}
+      {% if view.source_form_result %}
         <div class="callout">
-          <p><strong>Saved credentials file:</strong> <code>{{ view.result.credentials_path_display }}</code></p>
-          <p><strong>Stored app id:</strong> {{ view.result.saved_app_id_masked or "Not saved" }}</p>
-          <p><strong>Stored app key:</strong> {{ view.result.saved_app_key_masked or "Not saved" }}</p>
-        </div>
-      {% endif %}
-
-      {% if view.credentials.is_env_override %}
-        <div class="callout">
-          <p>Environment variables are currently overriding the saved file for this session. New saves still update the file, but the running process will keep using the environment values until those are removed.</p>
+          <p><strong>{{ view.source_form_result.action | replace("_", " ") | title }}:</strong> {{ view.source_form_result.source_name }}</p>
+          <p><strong>Config file:</strong> <code>{{ view.source_form_result.config_path_relative }}</code></p>
+          <p><strong>Source count:</strong> {{ view.source_form_result.source_count }}</p>
         </div>
       {% endif %}
 
       <form method="post" class="form-stack">
-        <label class="field">
-          <span>Adzuna app id</span>
-          <input
-            type="text"
-            name="app_id"
-            value="{{ view.entered_app_id }}"
-            placeholder="{% if view.credentials.saved_app_id_masked %}Leave blank to keep {{ view.credentials.saved_app_id_masked }}{% else %}Paste your Adzuna app id{% endif %}"
-            autocomplete="off"
-          >
-        </label>
+        <input type="hidden" name="intent" value="save_source">
+        <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
+        <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
+        <input type="hidden" name="source_index" value="{{ view.source_form.source_index }}">
 
-        <label class="field">
-          <span>Adzuna app key</span>
-          <input
-            type="password"
-            name="app_key"
-            value=""
-            placeholder="{% if view.credentials.saved_app_key_masked %}Leave blank to keep current saved key{% else %}Paste your Adzuna app key{% endif %}"
-            autocomplete="off"
-          >
-        </label>
+        <div class="field-grid">
+          <label class="field">
+            <span>Source name</span>
+            <input type="text" name="source_name" value="{{ view.source_form.name }}" required>
+          </label>
 
-        <div class="subsection">
-          <p class="subsection__summary">Credentials are written outside the repo to <code>{{ view.credentials_path_display }}</code>. After the first save, you can leave a field blank to keep the existing stored value.</p>
+          <label class="field">
+            <span>Source type</span>
+            <select name="source_type" required>
+              {% for source_type in view.source_type_options %}
+                <option value="{{ source_type }}" {% if source_type == view.source_form.type %}selected{% endif %}>{{ source_type }}</option>
+              {% endfor %}
+            </select>
+          </label>
         </div>
 
-        <button class="primary-button" type="submit">Save Adzuna Credentials</button>
+        <div class="field-grid">
+          <label class="field">
+            <span>Output file</span>
+            <input type="text" name="source_output" value="{{ view.source_form.output }}" placeholder="auto-generated if left blank">
+          </label>
+
+          <label class="field">
+            <span>Enabled</span>
+            <select name="source_enabled">
+              <option value="true" {% if view.source_form.enabled == "true" %}selected{% endif %}>Enabled</option>
+              <option value="false" {% if view.source_form.enabled == "false" %}selected{% endif %}>Disabled</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="subsection">
+          <h3>Adzuna Fields</h3>
+          <p class="subsection__summary">Used only when source type is <code>adzuna</code>. These streams use the saved Adzuna app id and app key from the setup panel above.</p>
+          <div class="field-grid">
+            <label class="field">
+              <span>Keywords</span>
+              <input type="text" name="adzuna_what" value="{{ view.source_form.what }}" placeholder="reporting analyst">
+            </label>
+
+            <label class="field">
+              <span>Location</span>
+              <input type="text" name="adzuna_where" value="{{ view.source_form.where }}" placeholder="Sydney">
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Country</span>
+              <input type="text" name="adzuna_country" value="{{ view.source_form.country }}">
+            </label>
+
+            <label class="field">
+              <span>Pages</span>
+              <input type="text" name="adzuna_pages" value="{{ view.source_form.pages }}">
+            </label>
+
+            <label class="field">
+              <span>Results per page</span>
+              <input type="text" name="adzuna_results_per_page" value="{{ view.source_form.results_per_page }}">
+            </label>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <h3>Greenhouse Fields</h3>
+          <p class="subsection__summary">Used only when source type is <code>greenhouse</code>. For OfferQuest job pulls this is a public board token, not a private API key.</p>
+          <label class="field">
+            <span>Board token</span>
+            <input type="text" name="greenhouse_board_token" value="{{ view.source_form.board_token }}" placeholder="example-company">
+          </label>
+        </div>
+
+        <div class="subsection">
+          <h3>Manual Fields</h3>
+          <p class="subsection__summary">Used only when source type is <code>manual</code>.</p>
+          <label class="field">
+            <span>Input path</span>
+            <input type="text" name="manual_input_path" value="{{ view.source_form.input_path }}" placeholder="jobs">
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button class="primary-button" type="submit">{{ "Update Source" if view.source_form_mode == "edit" else "Add Source" }}</button>
+          <a class="secondary-button" href="{{ request.url_for('job_sources') }}">Start New Source</a>
+        </div>
       </form>
     </article>
 
-    <article class="panel">
-      <div class="panel__header">
-        <h2>Current Status</h2>
-        <p>This shows the effective credential source the app will use right now.</p>
-      </div>
-
-      <dl class="detail-grid">
-        <div>
-          <dt>Effective status</dt>
-          <dd>{{ "Configured" if view.credentials.has_effective_credentials else "Missing" }}</dd>
-        </div>
-        <div>
-          <dt>Effective source</dt>
-          <dd>{{ view.credentials.effective_source }}</dd>
-        </div>
-        <div>
-          <dt>Credentials file</dt>
-          <dd><code>{{ view.credentials_path_display }}</code></dd>
-        </div>
-        <div>
-          <dt>Configured streams</dt>
-          <dd>{{ view.source_summary.source_count }}</dd>
-        </div>
-      </dl>
-
-      {% if view.credentials.has_effective_credentials %}
-        <div class="callout">
-          <p><strong>Effective app id:</strong> {{ view.credentials.effective_app_id_masked }}</p>
-          <p><strong>Effective app key:</strong> {{ view.credentials.effective_app_key_masked }}</p>
-        </div>
-      {% else %}
-        <div class="empty-state compact">
-          <p>No usable Adzuna credentials found yet.</p>
-        </div>
-      {% endif %}
-
-      <ul class="token-list">
-        <li>{{ view.source_summary.adzuna_count }} Adzuna</li>
-        <li>{{ view.source_summary.greenhouse_count }} Greenhouse</li>
-        <li>{{ view.source_summary.manual_count }} Manual</li>
-        {% if view.source_summary.other_count %}
-          <li>{{ view.source_summary.other_count }} Other</li>
-        {% endif %}
-      </ul>
-    </article>
-  </section>
-
-  <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
         <h2>Configured Job Streams</h2>
@@ -117,23 +298,69 @@
         <div class="callout callout--error">
           <p>{{ view.source_summary.error }}</p>
         </div>
-      {% elif not view.source_summary.exists %}
+      {% else %}
+        <div class="callout">
+          <p><strong>Merge output:</strong> <code>{{ view.source_summary.merge_output }}</code></p>
+          <p><strong>Summary output:</strong> <code>{{ view.source_summary.summary_output }}</code></p>
+          <p><strong>Merge inputs:</strong> kept in sync automatically with enabled source outputs.</p>
+        </div>
+      {% endif %}
+
+      {% if not view.source_summary.exists %}
         <div class="empty-state">
           <h3>No source config found</h3>
-          <p>Create <code>jobs/sources.json</code> to define the Adzuna searches and other streams that feed <code>outputs/jobs/all.jsonl</code>.</p>
+          <p>Saving your first source here will create <code>jobs/sources.json</code>.</p>
         </div>
       {% elif view.source_summary.sources %}
-        <div class="advice-stack">
+        <div class="source-card-grid">
           {% for source in view.source_summary.sources %}
-            <div class="advice-card">
-              <p class="advice-card__eyebrow">{{ source.type }}{% if not source.enabled %} disabled{% endif %}</p>
-              <h3>{{ source.name }}</h3>
+            <div class="advice-card source-card">
+              <div class="source-card__header">
+                <div>
+                  <p class="advice-card__eyebrow">{{ source.type }}</p>
+                  <h3>{{ source.name }}</h3>
+                </div>
+                <span class="status-chip {% if source.enabled %}status-chip--live{% else %}status-chip--muted{% endif %}">
+                  {{ "Enabled" if source.enabled else "Disabled" }}
+                </span>
+              </div>
+
               {% if source.details %}
                 <p>{{ source.details }}</p>
               {% endif %}
-              {% if source.output %}
-                <p><strong>Output:</strong> <code>{{ source.output }}</code></p>
-              {% endif %}
+
+              <div class="source-card__meta">
+                <span><strong>Output:</strong> <code>{{ source.output or "None" }}</code></span>
+                {% if source.type == "adzuna" %}
+                  <span><strong>Pages:</strong> {{ source.pages or 1 }}</span>
+                  <span><strong>Per page:</strong> {{ source.results_per_page or 20 }}</span>
+                {% elif source.type == "greenhouse" %}
+                  <span><strong>Board:</strong> {{ source.board_token or "None" }}</span>
+                {% elif source.type == "manual" %}
+                  <span><strong>Input:</strong> {{ source.input_path or "None" }}</span>
+                {% endif %}
+              </div>
+
+              <div class="button-row">
+                <a class="secondary-button" href="{{ request.url_for('job_sources') }}?edit_source={{ source.index }}">Edit</a>
+                <a class="secondary-button" href="{{ request.url_for('job_sources') }}?duplicate_source={{ source.index }}">Duplicate</a>
+
+                <form method="post" class="inline-form">
+                  <input type="hidden" name="intent" value="toggle_source">
+                  <input type="hidden" name="source_index" value="{{ source.index }}">
+                  <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
+                  <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
+                  <button class="secondary-button" type="submit">{{ "Disable" if source.enabled else "Enable" }}</button>
+                </form>
+
+                <form method="post" class="inline-form">
+                  <input type="hidden" name="intent" value="delete_source">
+                  <input type="hidden" name="source_index" value="{{ source.index }}">
+                  <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
+                  <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
+                  <button class="danger-button" type="submit">Delete</button>
+                </form>
+              </div>
             </div>
           {% endfor %}
         </div>
@@ -143,17 +370,79 @@
         </div>
       {% endif %}
     </article>
+  </section>
+
+  <section class="panel-grid">
+    <article class="panel">
+      <div class="panel__header">
+        <h2>Refresh Job Outputs</h2>
+        <p>Run the configured Adzuna, Greenhouse, and manual streams from the browser and rebuild the merged jobs dataset.</p>
+      </div>
+
+      {% if view.refresh_error %}
+        <div class="callout callout--error">
+          <p>{{ view.refresh_error }}</p>
+        </div>
+      {% endif %}
+
+      <form method="post" class="form-stack">
+        <input type="hidden" name="intent" value="refresh_jobs">
+
+        <div class="field-grid">
+          <label class="field">
+            <span>Config path</span>
+            <input type="text" name="config_path" value="{{ view.selected_refresh_config_path }}" required>
+          </label>
+
+          <label class="field">
+            <span>Output directory</span>
+            <input type="text" name="output_dir" value="{{ view.selected_refresh_output_dir }}" required>
+          </label>
+        </div>
+
+        <div class="subsection">
+          <p class="subsection__summary">This refresh will typically write the source files plus <code>{{ view.selected_refresh_summary_output }}</code>. Adzuna-backed streams use the saved credentials unless explicit environment variables override them.</p>
+        </div>
+
+        <button class="primary-button" type="submit">Refresh Jobs from Config</button>
+      </form>
+
+      {% if view.refresh_result %}
+        <div class="callout">
+          <p><strong>Refresh complete:</strong> {{ view.refresh_result.summary.source_count }} source{{ '' if view.refresh_result.summary.source_count == 1 else 's' }} processed.</p>
+          <p><strong>Summary:</strong> <code>{{ view.refresh_result.summary_path_relative }}</code></p>
+          {% if view.refresh_result.merged_output_path_relative %}
+            <p><strong>Merged jobs:</strong> <code>{{ view.refresh_result.merged_output_path_relative }}</code> ({{ view.refresh_result.summary.merged_job_count }})</p>
+          {% endif %}
+          <p><a href="{{ request.url_for('run_detail', run_id=view.refresh_result.run_manifest.id) }}">Open recorded refresh run</a></p>
+        </div>
+      {% endif %}
+    </article>
 
     <article class="panel">
       <div class="panel__header">
         <h2>What This Enables</h2>
-        <p>Once the credentials are saved, you no longer need to pass Adzuna keys on every CLI run.</p>
+        <p>This page now covers provider setup, source editing, and dataset refresh in one place without forcing credentials to dominate the main workflow.</p>
       </div>
       <ol class="step-list">
-        <li><code>python3 -m offerquest refresh-jobs</code> can rebuild the configured job-source files using the saved credentials.</li>
-        <li><code>python3 -m offerquest fetch-adzuna</code> can also fall back to the saved file when flags are omitted.</li>
-        <li>The credentials file stays outside the workspace, so it is not committed into this repo or recorded in workbench runs.</li>
+        <li>Open the setup panel only when you need Adzuna credentials or a reminder on how Adzuna and Greenhouse access works.</li>
+        <li>Add, edit, duplicate, disable, or delete source streams without hand-editing JSON.</li>
+        <li>Run a browser-triggered refresh and inspect the recorded run if you want to review the generated artifacts immediately.</li>
       </ol>
+
+      {% if view.refresh_result and view.refresh_result.summary.sources %}
+        <div class="subsection">
+          <h3>Latest Refresh Outputs</h3>
+          <ul class="strip-list">
+            {% for source in view.refresh_result.summary.sources %}
+              <li>
+                <span>{{ source.name }}</span>
+                <strong>{{ source.job_count }} jobs to {{ source.output }}</strong>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
     </article>
   </section>
 {% endblock %}

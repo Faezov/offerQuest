@@ -36,10 +36,67 @@ class WebAppTests(unittest.TestCase):
             app = create_app(workspace_root=root)
             client = TestClient(app)
 
-            response = client.get("/")
+            with patch(
+                "offerquest.web.app.build_dashboard_view",
+                return_value={
+                    "stats": {"run_count": 0, "artifact_count": 0, "workflow_count": 0},
+                    "workflow_counts": [],
+                    "recent_runs": [],
+                    "has_runs": False,
+                    "show_onboarding": True,
+                    "doctor": {"checks": [], "recommended_next_steps": []},
+                },
+            ):
+                response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("OfferQuest Local Workbench", response.text)
+
+    def test_dashboard_route_shows_start_here_checklist_for_empty_workspace(self) -> None:
+        try:
+            from fastapi.testclient import TestClient
+        except (ImportError, RuntimeError) as exc:
+            self.skipTest(f"fastapi test client unavailable: {exc}")
+
+        from offerquest.web.app import create_app
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            app = create_app(workspace_root=root)
+            client = TestClient(app)
+
+            with patch(
+                "offerquest.web.app.build_dashboard_view",
+                return_value={
+                    "stats": {"run_count": 0, "artifact_count": 0, "workflow_count": 0},
+                    "workflow_counts": [],
+                    "recent_runs": [],
+                    "has_runs": False,
+                    "show_onboarding": True,
+                    "doctor": {
+                        "checks": [
+                            {
+                                "title": "Profile source documents",
+                                "status_label": "WARN",
+                                "status_css_class": "status-chip--warning",
+                                "summary": "Missing CV and cover letter under `data/`.",
+                                "detail": "No supported profile documents were found in `data/`.",
+                                "next_step": "Add your own files under `data/`.",
+                            }
+                        ],
+                        "recommended_next_steps": [
+                            "Add your CV and base cover letter under `data/`.",
+                            "Start the workbench with `offerquest-workbench --root .`.",
+                        ],
+                    },
+                },
+            ):
+                response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Start Here", response.text)
+        self.assertIn("Workspace Checks", response.text)
+        self.assertIn("Add your CV and base cover letter under", response.text)
 
     def test_build_profile_page_renders(self) -> None:
         try:

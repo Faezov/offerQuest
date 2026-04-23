@@ -1,20 +1,16 @@
 {
   "sources": [
     {
-      "name": "New Way",
-      "type": "adzuna",
-      "output": "new-way.jsonl",
-      "country": "au",
-      "pages": 1,
-      "results_per_page": 20,
-      "what": "Scientist",
-      "where": "Sydney"
+      "name": "manual-jobs",
+      "type": "manual",
+      "input_path": "jobs",
+      "output": "manual.jsonl"
     }
   ],
   "merge": {
     "enabled": true,
     "inputs": [
-      "new-way.jsonl"
+      "manual.jsonl"
     ],
     "output": "all.jsonl"
   },

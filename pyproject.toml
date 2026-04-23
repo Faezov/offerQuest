@@ -5,13 +5,30 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "offerquest"
 version = "0.1.0"
-description = "Job-fit analysis, ATS checks, and cover-letter generation tooling."
-readme = "README.md"
+description = "Web-first job search tooling for profile extraction, job ranking, ATS checks, and tailored application drafts."
+readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.11"
 dependencies = []
+authors = [{name = "OfferQuest contributors"}]
+keywords = ["jobs", "resume", "ats", "cover-letter", "career", "fastapi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Framework :: FastAPI",
+  "Intended Audience :: End Users/Desktop",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+release = ["build>=1.2.2"]
 web = [
   "fastapi>=0.115",
   "jinja2>=3.1",

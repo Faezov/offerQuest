@@ -1,21 +1,18 @@
-Put raw job descriptions here as `.txt`, `.md`, `.doc`, or `.odt` files.
+Put manual job descriptions here as `.txt`, `.md`, `.doc`, `.docx`, or `.odt` files.
 
-The default refresh workflow is driven by [sources.json](/home/bulat/app/offerQuest/jobs/sources.json):
+The default refresh flow is driven by [sources.json](sources.json):
 
 ```bash
-python3 -m offerquest refresh-jobs
+offerquest refresh-jobs
 ```
-
-Adzuna-backed sources can reuse credentials saved in `~/.config/offerquest/adzuna.env`, including from the workbench `Job Sources` page.
 
 That command can regenerate:
 
-- `outputs/jobs/adzuna-*.jsonl` from configured Adzuna searches
 - `outputs/jobs/manual.jsonl` from the files in this folder
 - `outputs/jobs/all.jsonl` as the merged dataset used by ranking
 - `outputs/jobs/refresh-summary.json` as a machine-readable refresh report
 
-Add more sources by editing `jobs/sources.json`. For example, a Greenhouse board entry looks like:
+You can add more sources by editing `jobs/sources.json` or by using the workbench `Job Sources` page. A Greenhouse board entry looks like:
 
 ```json
 {
@@ -29,7 +26,7 @@ Add more sources by editing `jobs/sources.json`. For example, a Greenhouse board
 If you want to debug the manual-import step by itself, run:
 
 ```bash
-python3 -m offerquest import-manual-jobs \
+offerquest import-manual-jobs \
   --input-path jobs \
   --output outputs/jobs/manual.jsonl
 ```
@@ -37,11 +34,12 @@ python3 -m offerquest import-manual-jobs \
 Then merge and rank manually if needed:
 
 ```bash
-python3 -m offerquest merge-jobs \
+offerquest merge-jobs \
   --input outputs/jobs/manual.jsonl \
   --output outputs/jobs/all.jsonl
 
-python3 -m offerquest rank-jobs \
-  --profile outputs/bulat-profile.json \
-  --jobs-file outputs/jobs/all.jsonl
+offerquest rank-jobs \
+  --profile outputs/profiles/candidate-profile.json \
+  --jobs-file outputs/jobs/all.jsonl \
+  --output outputs/job-ranking.json
 ```

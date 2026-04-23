@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .. import config as _config
 from ..errors import ProfileValidationError
 from ..ollama import OllamaError
 from ..workspace import ProjectState
@@ -33,7 +34,11 @@ from ..workbench import (
 )
 
 
-def create_app(*, workspace_root: str | Path | None = None) -> Any:
+def create_app(
+    *,
+    workspace_root: str | Path | None = None,
+    config_path: str | Path | None = None,
+) -> Any:
     try:
         from fastapi import FastAPI, HTTPException, Request
         from fastapi.responses import HTMLResponse
@@ -44,6 +49,9 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
             "The local web workbench requires FastAPI, Jinja2, and Uvicorn. "
             "Install them with `pip install -e .[web]`."
         ) from exc
+
+    if config_path is not None:
+        _config.set_active(_config.load_config(config_path))
 
     root_value = workspace_root or os.getenv("OFFERQUEST_WORKSPACE_ROOT") or Path.cwd()
     root = Path(root_value).resolve()
@@ -1029,6 +1037,7 @@ def create_app(*, workspace_root: str | Path | None = None) -> Any:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the OfferQuest local web workbench")
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Workspace root, default: current directory")
+    parser.add_argument("--config", type=Path, help="Optional OfferQuest JSON config override")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host, default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=8787, help="Bind port, default: 8787")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for local development")
@@ -1042,6 +1051,8 @@ def main(argv: list[str] | None = None) -> int:
         ) from exc
 
     os.environ["OFFERQUEST_WORKSPACE_ROOT"] = str(args.root.resolve())
+    if args.config:
+        os.environ[_config.CONFIG_PATH_ENVVAR] = str(args.config.resolve())
 
     if args.reload:
         uvicorn.run(
@@ -1053,6 +1064,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    app = create_app(workspace_root=args.root)
+    app = create_app(workspace_root=args.root, config_path=args.config)
     uvicorn.run(app, host=args.host, port=args.port, reload=False)
     return 0

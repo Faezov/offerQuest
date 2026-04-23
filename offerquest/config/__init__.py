@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 DEFAULTS_PATH = Path(__file__).parent / "defaults.json"
+CONFIG_PATH_ENVVAR = "OFFERQUEST_CONFIG"
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,9 @@ class Config:
     search_focus_skill_to_keyword: dict[str, str]
     search_focus_domain_to_keyword: dict[str, str]
     search_focus_default_title: str
+    search_focus_titles_by_skill: dict[str, list[str]]
+    search_focus_titles_by_domain: dict[str, list[str]]
+    search_focus_stretch_roles: tuple[str, ...]
     fallback_resume_title: str
 
 
@@ -62,14 +67,27 @@ def _config_from_dict(data: dict[str, Any]) -> Config:
         search_focus_skill_to_keyword=search_focus["skill_to_keyword"],
         search_focus_domain_to_keyword=search_focus["domain_to_keyword"],
         search_focus_default_title=search_focus["default_title"],
+        search_focus_titles_by_skill=search_focus.get("titles_by_skill", {}),
+        search_focus_titles_by_domain=search_focus.get("titles_by_domain", {}),
+        search_focus_stretch_roles=tuple(search_focus.get("stretch_roles_to_treat_cautiously", [])),
         fallback_resume_title=data["fallback_resume_title"],
     )
 
 
+def resolve_config_path(path: str | Path | None = None) -> Path | None:
+    if path is None:
+        raw_path = os.getenv(CONFIG_PATH_ENVVAR)
+        if not raw_path:
+            return None
+        path = raw_path
+    return Path(path).expanduser().resolve()
+
+
 def load_config(path: str | Path | None = None) -> Config:
     base = json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
-    if path is not None:
-        overlay = json.loads(Path(path).read_text(encoding="utf-8"))
+    config_path = resolve_config_path(path)
+    if config_path is not None:
+        overlay = json.loads(config_path.read_text(encoding="utf-8"))
         base = _deep_merge(base, overlay)
     return _config_from_dict(base)
 

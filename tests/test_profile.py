@@ -82,6 +82,21 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("Melbourne", profile["search_focus"]["location_preferences"])
         self.assertIn("VIC", profile["search_focus"]["location_preferences"])
 
+    def test_build_candidate_profile_includes_keywords_for_expanded_tool_patterns(self) -> None:
+        cv_text = """JANE DOE
+Sydney, NSW, Australia
+Professional Summary
+Data analyst focused on Power BI dashboards and stakeholder reporting.
+Core Skills
+Power BI
+Reporting
+"""
+
+        profile = build_candidate_profile(cv_text, "")
+
+        self.assertIn("Power BI", profile["core_skills"])
+        self.assertIn("Power BI", profile["search_focus"]["keywords_to_include"])
+
 
 if __name__ == "__main__":
     unittest.main()

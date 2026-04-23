@@ -281,19 +281,13 @@ def build_search_focus(
 ) -> dict:
     cfg = _config.active()
     priority_titles = [cfg.search_focus_default_title]
-
-    if "Metadata" in skills:
-        priority_titles.append("Metadata Analyst / Data Governance Analyst")
-    if "Reporting" in skills:
-        priority_titles.append("Reporting Analyst / Insights Analyst")
-    if "Data quality" in skills:
-        priority_titles.append("Data Quality Analyst")
-    if "Healthcare" in domains:
-        priority_titles.append("Health Data Analyst")
-    if "Research" in domains:
-        priority_titles.append("Research Data Analyst")
     if target_role_from_cover_letter:
         priority_titles.insert(0, target_role_from_cover_letter)
+
+    for skill in skills:
+        priority_titles.extend(cfg.search_focus_titles_by_skill.get(skill, []))
+    for domain in domains:
+        priority_titles.extend(cfg.search_focus_titles_by_domain.get(domain, []))
 
     skill_map = cfg.search_focus_skill_to_keyword
     domain_map = cfg.search_focus_domain_to_keyword
@@ -307,11 +301,7 @@ def build_search_focus(
         "priority_domains": domains,
         "location_preferences": build_location_preferences(location),
         "keywords_to_include": dedupe(keywords_to_include),
-        "stretch_roles_to_treat_cautiously": [
-            "Machine-learning-heavy Data Scientist roles",
-            "Pure data platform or infrastructure engineering roles",
-            "Roles that require deep BI tooling not shown in the CV",
-        ],
+        "stretch_roles_to_treat_cautiously": list(cfg.search_focus_stretch_roles),
     }
 
 

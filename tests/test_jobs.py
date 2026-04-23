@@ -11,6 +11,7 @@ from offerquest.jobs import (
     fetch_adzuna_jobs,
     fetch_adzuna_job_pages,
     fetch_greenhouse_jobs,
+    infer_manual_company_and_location,
     import_manual_jobs,
     job_record_to_text,
     load_adzuna_credentials_file,
@@ -115,6 +116,22 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(records[0]["company"], "NSW Health")
         self.assertEqual(records[0]["location"], "Sydney")
         self.assertIn("SQL and reporting", records[0]["description_text"])
+
+    def test_infer_manual_company_and_location_handles_generic_region_name_after_comma(self) -> None:
+        text = "Senior Data Analyst\nNSW Health, Victoria\nSQL and reporting\n"
+
+        company, location = infer_manual_company_and_location(text, title="Senior Data Analyst")
+
+        self.assertEqual(company, "NSW Health")
+        self.assertEqual(location, "Victoria")
+
+    def test_infer_manual_company_and_location_handles_generic_region_name_on_next_line(self) -> None:
+        text = "Senior Data Analyst\nAtlassian\nQueensland\nSQL and reporting\n"
+
+        company, location = infer_manual_company_and_location(text, title="Senior Data Analyst")
+
+        self.assertEqual(company, "Atlassian")
+        self.assertEqual(location, "Queensland")
 
     def test_write_and_collect_job_records_support_jsonl(self) -> None:
         jobs = [

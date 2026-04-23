@@ -53,11 +53,61 @@ class WorkbenchTests(unittest.TestCase):
                 label="profile",
             )
 
-            dashboard = build_dashboard_view(state)
+            with patch(
+                "offerquest.workbench.build_doctor_report",
+                return_value={
+                    "workspace_root": str(root),
+                    "checks": [],
+                    "blocking_issue_count": 0,
+                    "warning_count": 0,
+                    "ready_for_first_run": True,
+                    "recommended_next_steps": [],
+                },
+            ):
+                dashboard = build_dashboard_view(state)
 
         self.assertTrue(dashboard["has_runs"])
         self.assertEqual(dashboard["stats"]["run_count"], 1)
         self.assertEqual(dashboard["workflow_counts"][0]["workflow"], "build-profile")
+
+    def test_build_dashboard_view_includes_onboarding_for_empty_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            state = ProjectState.from_root(root)
+
+            with patch(
+                "offerquest.workbench.build_doctor_report",
+                return_value={
+                    "workspace_root": str(root),
+                    "checks": [
+                        {
+                            "key": "profile_sources",
+                            "title": "Profile source documents",
+                            "status": "warn",
+                            "status_label": "WARN",
+                            "status_css_class": "status-chip--warning",
+                            "blocking": True,
+                            "summary": "Missing CV and cover letter under `data/`.",
+                            "detail": "No supported profile documents were found in `data/`.",
+                            "next_step": "Add your own files under `data/`.",
+                        }
+                    ],
+                    "blocking_issue_count": 1,
+                    "warning_count": 1,
+                    "ready_for_first_run": False,
+                    "recommended_next_steps": [
+                        "Add your CV and base cover letter under `data/`.",
+                    ],
+                },
+            ):
+                dashboard = build_dashboard_view(state)
+
+        self.assertFalse(dashboard["has_runs"])
+        self.assertTrue(dashboard["show_onboarding"])
+        self.assertEqual(
+            dashboard["doctor"]["recommended_next_steps"][0],
+            "Add your CV and base cover letter under `data/`.",
+        )
 
     def test_build_run_detail_view_enriches_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

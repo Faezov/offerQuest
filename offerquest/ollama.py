@@ -12,9 +12,18 @@ from .errors import OllamaError
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 
 
-def get_ollama_status(base_url: str = DEFAULT_OLLAMA_BASE_URL) -> dict:
+def get_ollama_status(
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    *,
+    timeout_seconds: int = 5,
+) -> dict:
     try:
-        payload = _post_json(f"{base_url}/api/tags", None, method="GET")
+        payload = _post_json(
+            f"{base_url}/api/tags",
+            None,
+            method="GET",
+            timeout_seconds=timeout_seconds,
+        )
     except OllamaError as exc:
         return {
             "base_url": base_url,

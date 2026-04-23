@@ -19,37 +19,77 @@
   <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
-        <h2>Workflow Mix</h2>
-        <p>Which jobs the workbench has been doing lately.</p>
+        <h2>{{ "Start Here" if view.show_onboarding else "Workflow Mix" }}</h2>
+        <p>
+          {% if view.show_onboarding %}
+            A guided setup path for a brand-new workspace.
+          {% else %}
+            Which jobs the workbench has been doing lately.
+          {% endif %}
+        </p>
       </div>
-      {% if view.workflow_counts %}
-        <ul class="strip-list">
-          {% for item in view.workflow_counts %}
-            <li>
-              <span>{{ item.workflow }}</span>
-              <strong>{{ item.count }}</strong>
-            </li>
+      {% if view.show_onboarding %}
+        <ol class="step-list">
+          {% for step in view.doctor.recommended_next_steps %}
+            <li>{{ step }}</li>
           {% endfor %}
-        </ul>
+        </ol>
       {% else %}
-        <div class="empty-state">
-          <h3>No runs yet</h3>
-          <p>Run a profile build, ATS check, ranking, or cover-letter command and it will appear here.</p>
-        </div>
+        {% if view.workflow_counts %}
+          <ul class="strip-list">
+            {% for item in view.workflow_counts %}
+              <li>
+                <span>{{ item.workflow }}</span>
+                <strong>{{ item.count }}</strong>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="empty-state">
+            <h3>No runs yet</h3>
+            <p>Run a profile build, ATS check, ranking, or cover-letter command and it will appear here.</p>
+          </div>
+        {% endif %}
       {% endif %}
     </article>
 
     <article class="panel">
       <div class="panel__header">
-        <h2>Next Useful Step</h2>
-        <p>A good local loop for this workbench.</p>
+        <h2>{{ "Workspace Checks" if view.show_onboarding else "Next Useful Step" }}</h2>
+        <p>
+          {% if view.show_onboarding %}
+            The same setup checks surfaced by <code>offerquest doctor</code>.
+          {% else %}
+            A good local loop for this workbench.
+          {% endif %}
+        </p>
       </div>
-      <ol class="step-list">
-        <li>Build a candidate profile from the current CV and base cover letter.</li>
-        <li>Fetch or import jobs, then rank them.</li>
-        <li>Generate a CV tailoring plan, then a tailored draft for a selected ranked role.</li>
-        <li>Review ATS changes, tailored resumes, and letter drafts in one place.</li>
-      </ol>
+      {% if view.show_onboarding %}
+        <div class="advice-stack">
+          {% for check in view.doctor.checks %}
+            <article class="advice-card">
+              <div class="button-row">
+                <span class="status-chip {{ check.status_css_class }}">{{ check.status_label }}</span>
+                <strong>{{ check.title }}</strong>
+              </div>
+              <p>{{ check.summary }}</p>
+              {% if check.detail %}
+                <p class="inline-meta">{{ check.detail }}</p>
+              {% endif %}
+              {% if check.next_step %}
+                <p class="inline-meta"><strong>Next:</strong> {{ check.next_step }}</p>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <ol class="step-list">
+          <li>Build a candidate profile from the current CV and base cover letter.</li>
+          <li>Fetch or import jobs, then rank them.</li>
+          <li>Generate a CV tailoring plan, then a tailored draft for a selected ranked role.</li>
+          <li>Review ATS changes, tailored resumes, and letter drafts in one place.</li>
+        </ol>
+      {% endif %}
     </article>
   </section>
 

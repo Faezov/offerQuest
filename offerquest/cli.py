@@ -15,6 +15,7 @@ from .cover_letter import (
     generate_cover_letters_from_ranking_llm,
     write_cover_letter,
 )
+from .diagnostics import build_doctor_report, render_doctor_report
 from .docx import export_document_as_docx
 from .errors import ConfigError, OfferQuestError
 from .extractors import read_document_text
@@ -34,7 +35,7 @@ from .ollama import DEFAULT_OLLAMA_BASE_URL, get_ollama_status
 from .profile import build_candidate_profile, build_profile_from_files
 from .reranking import rerank_job_files, rerank_job_records
 from .scoring import rank_job_files, rank_job_records, score_job_file
-from .workspace import ProjectState
+from .workspace import ProjectState, WorkspaceInitResult, init_workspace
 
 SUPPORTED_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 LOG_LEVEL_NAMES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
@@ -67,6 +68,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_profile_source_arguments(build_profile_parser)
     build_profile_parser.add_argument("--output", type=Path, help="Write profile JSON to this path")
+
+    init_workspace_parser = subparsers.add_parser(
+        "init-workspace",
+        help="Create a clean OfferQuest workspace with starter folders and config",
+    )
+    init_workspace_parser.add_argument("--path", type=Path, required=True, help="Target directory for the workspace")
+    init_workspace_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bootstrap into an existing non-empty directory and overwrite OfferQuest starter files",
+    )
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Inspect a workspace and suggest the next setup steps",
+    )
+    doctor_parser.add_argument(
+        "--path",
+        type=Path,
+        default=Path.cwd(),
+        help="Workspace root to inspect, default: current directory",
+    )
+    doctor_parser.add_argument(
+        "--ollama-base-url",
+        default=DEFAULT_OLLAMA_BASE_URL,
+        help="Ollama base URL to probe, default: http://localhost:11434",
+    )
 
     export_docx_parser = subparsers.add_parser(
         "export-docx",
@@ -259,17 +287,34 @@ def add_profile_reuse_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cover-letter", type=Path, help="Cover letter file, required with --cv")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     configure_logging(args.log_level)
     if args.offerquest_config:
         try:
             _config.set_active(_config.load_config(args.offerquest_config))
         except ConfigError as exc:
             parser.exit(2, f"error: {exc}\n")
-    project_state = ProjectState.from_root(Path.cwd())
     logger.info("Running OfferQuest command %s", args.command)
+
+    if args.command == "init-workspace":
+        try:
+            result = init_workspace(args.path, force=args.force)
+        except ValueError as exc:
+            parser.exit(2, f"error: {exc}\n")
+        print(format_workspace_init_result(result))
+        return 0
+
+    if args.command == "doctor":
+        report = build_doctor_report(
+            ProjectState.from_root(args.path),
+            ollama_base_url=args.ollama_base_url,
+        )
+        print(render_doctor_report(report), end="")
+        return 0 if report["ready_for_first_run"] else 1
+
+    project_state = ProjectState.from_root(Path.cwd())
 
     try:
         if args.command == "build-profile":
@@ -785,3 +830,32 @@ def record_run(
         metadata=metadata,
         label=label,
     )
+
+
+def format_workspace_init_result(result: WorkspaceInitResult) -> str:
+    lines = [
+        "Initialized OfferQuest workspace",
+        f"Workspace: {result.root}",
+        "",
+    ]
+
+    if result.created_paths:
+        lines.append("Created:")
+        lines.extend(f"- {path}" for path in result.created_paths)
+        lines.append("")
+
+    if result.overwritten_paths:
+        lines.append("Overwritten:")
+        lines.extend(f"- {path}" for path in result.overwritten_paths)
+        lines.append("")
+
+    lines.extend(
+        [
+            "Next steps:",
+            "1. Add your CV and base cover letter under `data/`.",
+            "2. Review `jobs/sources.json` and update the starter job sources.",
+            "3. Run `offerquest doctor --path .` from inside the workspace.",
+            "4. Start the workbench with `offerquest-workbench --root .`.",
+        ]
+    )
+    return "\n".join(lines)

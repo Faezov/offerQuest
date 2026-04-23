@@ -8,6 +8,53 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+WORKSPACE_README = """# OfferQuest Workspace
+
+This folder is a local OfferQuest workspace.
+
+## What Goes Here
+
+- Put your CV and base cover letter in `data/`
+- Keep manual job descriptions in `jobs/`
+- OfferQuest writes generated outputs to `outputs/`
+
+## First Steps
+
+1. Add your own CV and base cover letter under `data/`
+2. Review `jobs/sources.json` and update the starter job sources
+3. Run `offerquest doctor --path .` to check the workspace
+4. Start the web workbench with `offerquest-workbench --root .`
+
+No personal sample documents are included. This workspace is meant to stay user-owned.
+"""
+
+DATA_README = """Put your own CV, resume, and base cover letter files here.
+
+Use filenames that include `cv` or `resume` for the resume, and `cover` or `letter` for the cover letter, so OfferQuest can pick sensible defaults in the CLI and web workbench.
+"""
+
+JOBS_README = """Put manual job descriptions here as `.txt`, `.md`, `.doc`, `.docx`, or `.odt` files.
+
+The starter `sources.json` file already includes a manual source that reads from this folder and writes normalized job records to `outputs/jobs/manual.jsonl`.
+"""
+
+STARTER_JOB_SOURCES = {
+    "sources": [
+        {
+            "name": "manual-jobs",
+            "type": "manual",
+            "input_path": "jobs",
+            "output": "manual.jsonl",
+        }
+    ],
+    "merge": {
+        "enabled": True,
+        "inputs": ["manual.jsonl"],
+        "output": "all.jsonl",
+    },
+    "summary_output": "refresh-summary.json",
+}
+
 
 @dataclass(frozen=True)
 class ProjectState:
@@ -122,6 +169,88 @@ class ProjectState:
         return run_id
 
 
+@dataclass(frozen=True)
+class WorkspaceInitResult:
+    root: Path
+    created_paths: tuple[str, ...]
+    overwritten_paths: tuple[str, ...]
+    readme_path: Path
+    sources_path: Path
+
+
+def init_workspace(root: str | Path, *, force: bool = False) -> WorkspaceInitResult:
+    project_state = ProjectState.from_root(root)
+    root_path = project_state.root
+    created_paths: list[str] = []
+    overwritten_paths: list[str] = []
+
+    if root_path.exists():
+        try:
+            has_existing_content = any(root_path.iterdir())
+        except OSError:
+            has_existing_content = False
+        if has_existing_content and not force:
+            raise ValueError(
+                f"Workspace path is not empty: {root_path}. Use --force to bootstrap into an existing directory."
+            )
+    else:
+        root_path.mkdir(parents=True, exist_ok=True)
+        created_paths.append(".")
+
+    for directory in (
+        project_state.data_dir,
+        project_state.jobs_dir,
+        project_state.outputs_dir,
+        project_state.state_dir,
+        project_state.runs_dir,
+    ):
+        if not directory.exists():
+            directory.mkdir(parents=True, exist_ok=True)
+            created_paths.append(str(relative_to_root(directory, root_path)))
+
+    readme_path = root_path / "README.md"
+    data_readme_path = project_state.data_dir / "README.md"
+    jobs_readme_path = project_state.jobs_dir / "README.md"
+    sources_path = project_state.jobs_dir / "sources.json"
+
+    _write_workspace_text(
+        readme_path,
+        WORKSPACE_README,
+        root=root_path,
+        created_paths=created_paths,
+        overwritten_paths=overwritten_paths,
+    )
+    _write_workspace_text(
+        data_readme_path,
+        DATA_README,
+        root=root_path,
+        created_paths=created_paths,
+        overwritten_paths=overwritten_paths,
+    )
+    _write_workspace_text(
+        jobs_readme_path,
+        JOBS_README,
+        root=root_path,
+        created_paths=created_paths,
+        overwritten_paths=overwritten_paths,
+    )
+    _write_workspace_json(
+        sources_path,
+        STARTER_JOB_SOURCES,
+        root=root_path,
+        created_paths=created_paths,
+        overwritten_paths=overwritten_paths,
+    )
+
+    return WorkspaceInitResult(
+        root=root_path,
+        created_paths=tuple(created_paths),
+        overwritten_paths=tuple(overwritten_paths),
+        readme_path=readme_path,
+        sources_path=sources_path,
+    )
+
+
 def summarize_run(manifest: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": manifest.get("id"),
@@ -177,3 +306,42 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     finally:
         if temp_path and temp_path.exists():
             temp_path.unlink()
+
+
+def _write_workspace_text(
+    path: Path,
+    content: str,
+    *,
+    root: Path,
+    created_paths: list[str],
+    overwritten_paths: list[str],
+) -> None:
+    _record_workspace_path(path, root=root, created_paths=created_paths, overwritten_paths=overwritten_paths)
+    path.write_text(content, encoding="utf-8")
+
+
+def _write_workspace_json(
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    root: Path,
+    created_paths: list[str],
+    overwritten_paths: list[str],
+) -> None:
+    _record_workspace_path(path, root=root, created_paths=created_paths, overwritten_paths=overwritten_paths)
+    write_json_atomic(path, payload)
+
+
+def _record_workspace_path(
+    path: Path,
+    *,
+    root: Path,
+    created_paths: list[str],
+    overwritten_paths: list[str],
+) -> None:
+    relative = str(relative_to_root(path, root))
+    if path.exists():
+        if relative not in overwritten_paths:
+            overwritten_paths.append(relative)
+    elif relative not in created_paths:
+        created_paths.append(relative)

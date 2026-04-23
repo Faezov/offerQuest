@@ -13,6 +13,7 @@ from .cover_letter import (
     slugify,
     write_cover_letter,
 )
+from .diagnostics import build_doctor_report
 from .docx import export_document_as_docx
 from .extractors import read_document_text
 from .jobs import (
@@ -137,6 +138,7 @@ class SaveJobSourceConfigResult:
 
 def build_dashboard_view(project_state: ProjectState) -> dict[str, Any]:
     runs = project_state.list_runs()
+    doctor_report = build_doctor_report(project_state) if not runs else None
     workflow_counts: dict[str, int] = {}
     artifact_count = 0
 
@@ -163,6 +165,8 @@ def build_dashboard_view(project_state: ProjectState) -> dict[str, Any]:
         ),
         "recent_runs": recent_runs,
         "has_runs": bool(runs),
+        "show_onboarding": not bool(runs),
+        "doctor": doctor_report,
     }
 
 

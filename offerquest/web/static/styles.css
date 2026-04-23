@@ -696,6 +696,11 @@ h1 {
   color: var(--muted);
 }
 
+.status-chip--warning {
+  background: rgba(180, 83, 9, 0.14);
+  color: var(--warm);
+}
+
 .code-preview {
   margin: 1rem 0 0 0;
   padding: 1rem;

@@ -6,14 +6,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from offerquest.errors import JobSourceError
 from offerquest.jobs import (
     collect_job_record_inputs,
-    fetch_adzuna_jobs,
     fetch_adzuna_job_pages,
-    fetch_json,
+    fetch_adzuna_jobs,
     fetch_greenhouse_jobs,
-    infer_manual_company_and_location,
+    fetch_json,
     import_manual_jobs,
+    infer_manual_company_and_location,
     job_record_to_text,
     load_adzuna_credentials_file,
     load_adzuna_credentials_status,
@@ -26,7 +27,6 @@ from offerquest.jobs import (
     write_adzuna_credentials_file,
     write_job_records,
 )
-from offerquest.errors import JobSourceError
 from offerquest.scoring import score_job_record
 
 

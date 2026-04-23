@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 import subprocess
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
 from .errors import DocumentExtractionError
 
@@ -275,3 +275,9 @@ def normalize_inline_whitespace(text: str) -> str:
 
 def alpha_count(text: str) -> int:
     return sum(char.isalpha() for char in text)
+
+
+def read_optional_text(path: str | Path | None) -> str:
+    if path is None:
+        return ""
+    return read_document_text(path)

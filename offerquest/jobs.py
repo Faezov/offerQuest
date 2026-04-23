@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 from .errors import JobSourceError
 from .extractors import normalize_text, read_document_text
+from .types import JobRecord
 
 ADZUNA_ENV_PATH_ENVVAR = "OFFERQUEST_ADZUNA_ENV_FILE"
 ADZUNA_ENV_FILENAME = "adzuna.env"
@@ -338,7 +339,7 @@ def fetch_json(url: str, *, timeout: int = 30, retries: int = 3) -> dict[str, An
     raise JobSourceError(f"Failed to fetch JSON from {url}") from last_error
 
 
-def normalize_adzuna_job(job: dict[str, Any], *, country: str) -> dict:
+def normalize_adzuna_job(job: dict[str, Any], *, country: str) -> JobRecord:
     company = value_at(job, "company", "display_name")
     location = value_at(job, "location", "display_name")
     category = value_at(job, "category", "label")
@@ -372,7 +373,7 @@ def normalize_adzuna_job(job: dict[str, Any], *, country: str) -> dict:
     )
 
 
-def normalize_greenhouse_job(job: dict[str, Any], *, board_token: str, company: str) -> dict:
+def normalize_greenhouse_job(job: dict[str, Any], *, board_token: str, company: str) -> JobRecord:
     departments = [
         item.get("name")
         for item in job.get("departments", [])
@@ -424,7 +425,7 @@ def import_manual_jobs(path: str | Path) -> list[dict]:
     return [manual_job_record_from_file(file_path) for file_path in paths]
 
 
-def manual_job_record_from_file(path: Path) -> dict:
+def manual_job_record_from_file(path: Path) -> JobRecord:
     text = read_document_text(path)
     title = infer_manual_title(text, fallback=path.stem.replace("_", " ").replace("-", " "))
     company, location = infer_manual_company_and_location(text, title=title)
@@ -485,7 +486,7 @@ def infer_manual_company_and_location(text: str, *, title: str) -> tuple[str | N
     return company, location
 
 
-def normalize_job_record(record: dict[str, Any]) -> dict:
+def normalize_job_record(record: dict[str, Any]) -> JobRecord:
     normalized = {
         "id": record.get("id") or build_job_record_id(record),
         "source": record.get("source") or "unknown",

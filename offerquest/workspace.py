@@ -67,7 +67,7 @@ class ProjectState:
     index_path: Path
 
     @classmethod
-    def from_root(cls, root: str | Path) -> "ProjectState":
+    def from_root(cls, root: str | Path) -> ProjectState:
         root_path = Path(root).resolve()
         outputs_dir = root_path / "outputs"
         state_dir = outputs_dir / "state"

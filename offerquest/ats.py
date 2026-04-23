@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import config as _config
-from .extractors import read_document_text
+from .extractors import read_document_text, read_optional_text
 from .jobs import job_record_to_text
 from .matching import contains_any_keyword, contains_keyword
 from .profile import build_candidate_profile, split_cv_sections
 from .scoring import infer_job_title, score_job_text, score_title_alignment
+from .types import ATSReport
 
 
 def _ats_patterns() -> dict[str, list[str]]:
@@ -20,7 +21,7 @@ def ats_check_job_file(
     job_path: str | Path,
     *,
     cover_letter_path: str | Path | None = None,
-) -> dict:
+) -> ATSReport:
     cv_text = read_document_text(cv_path)
     job_text = read_document_text(job_path)
     cover_letter_text = read_optional_text(cover_letter_path)
@@ -40,7 +41,7 @@ def ats_check_job_record(
     job_record: dict,
     *,
     cover_letter_path: str | Path | None = None,
-) -> dict:
+) -> ATSReport:
     cv_text = read_document_text(cv_path)
     cover_letter_text = read_optional_text(cover_letter_path)
     job_text = job_record_to_text(job_record)
@@ -69,7 +70,7 @@ def build_ats_report(
     *,
     cv_path: str | None = None,
     cover_letter_text: str = "",
-) -> dict:
+) -> ATSReport:
     cv_profile = build_candidate_profile(cv_text, cover_letter_text)
     job_title = infer_job_title(job_text)
 
@@ -363,9 +364,3 @@ def dedupe_preserve_order(values: list[str]) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
-
-
-def read_optional_text(path: str | Path | None) -> str:
-    if path is None:
-        return ""
-    return read_document_text(path)

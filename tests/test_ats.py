@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from offerquest.ats import build_ats_report, ats_check_job_record
+from offerquest.ats import ats_check_job_record, build_ats_report
 
 CV_TEXT = """Bulat Faezov
 Sydney, NSW, Australia

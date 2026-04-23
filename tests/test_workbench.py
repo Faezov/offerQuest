@@ -23,14 +23,14 @@ from offerquest.workbench import (
     build_run_detail_view,
     build_runs_view,
     resolve_workspace_input_path,
+    run_cover_letter_build,
+    run_cover_letter_compare,
     run_job_source_delete,
     run_job_source_save,
     run_job_source_toggle,
     run_ollama_models_pull,
-    run_refresh_jobs_build,
-    run_cover_letter_compare,
-    run_cover_letter_build,
     run_profile_build,
+    run_refresh_jobs_build,
     run_rerank_jobs_build,
     run_resume_tailored_draft_build,
     run_resume_tailoring_plan_build,
@@ -56,7 +56,7 @@ class WorkbenchTests(unittest.TestCase):
             )
 
             with patch(
-                "offerquest.workbench.build_doctor_report",
+                "offerquest.workbench.runs.build_doctor_report",
                 return_value={
                     "workspace_root": str(root),
                     "checks": [],
@@ -78,7 +78,7 @@ class WorkbenchTests(unittest.TestCase):
             state = ProjectState.from_root(root)
 
             with patch(
-                "offerquest.workbench.build_doctor_report",
+                "offerquest.workbench.runs.build_doctor_report",
                 return_value={
                     "workspace_root": str(root),
                     "checks": [
@@ -225,7 +225,7 @@ class WorkbenchTests(unittest.TestCase):
             state = ProjectState.from_root(tmpdir)
 
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.setup.get_ollama_status",
                 return_value={
                     "reachable": True,
                     "command_available": True,
@@ -236,11 +236,11 @@ class WorkbenchTests(unittest.TestCase):
                 },
             ):
                 with patch(
-                    "offerquest.workbench.detect_gpu_environment",
+                    "offerquest.workbench.setup.detect_gpu_environment",
                     return_value={"summary": "NVIDIA GPU detected.", "detail": "Ready", "devices": []},
                 ):
                     with patch(
-                        "offerquest.workbench.get_managed_ollama_server_state",
+                        "offerquest.workbench.setup.get_managed_ollama_server_state",
                         return_value={"running": False, "pid": None, "log_path": "log", "pid_path": "pid"},
                     ):
                         view = build_ollama_setup_view(state)
@@ -251,7 +251,7 @@ class WorkbenchTests(unittest.TestCase):
 
     def test_run_ollama_models_pull_uses_streaming_api_and_refreshes_status(self) -> None:
         with patch(
-            "offerquest.workbench.get_ollama_status",
+            "offerquest.workbench.setup.get_ollama_status",
             side_effect=[
                 {
                     "reachable": True,
@@ -294,7 +294,7 @@ class WorkbenchTests(unittest.TestCase):
                     }
                 )
 
-            with patch("offerquest.workbench.pull_ollama_model", side_effect=fake_pull_ollama_model) as pull_mock:
+            with patch("offerquest.workbench.setup.pull_ollama_model", side_effect=fake_pull_ollama_model) as pull_mock:
                 result = run_ollama_models_pull(
                     base_url="http://localhost:11434",
                     models=["qwen3:8b"],
@@ -464,7 +464,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.refresh_job_sources",
+                "offerquest.workbench.setup.refresh_job_sources",
                 return_value=refresh_summary,
             ) as refresh_mock:
                 result = run_refresh_jobs_build(
@@ -534,7 +534,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.documents.get_ollama_status",
                 return_value={
                     "reachable": False,
                     "command_available": True,
@@ -568,7 +568,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.documents.get_ollama_status",
                 return_value={
                     "reachable": True,
                     "command_available": True,
@@ -608,7 +608,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.get_ollama_status",
+                "offerquest.workbench.documents.get_ollama_status",
                 return_value={
                     "reachable": False,
                     "command_available": True,
@@ -770,7 +770,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.generate_cover_letter_for_job_record_llm",
+                "offerquest.workbench.documents.generate_cover_letter_for_job_record_llm",
                 return_value={
                     "job_id": "job-1",
                     "job_title": "Senior Data Analyst",
@@ -844,7 +844,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.generate_cover_letter_for_job_record_llm",
+                "offerquest.workbench.documents.generate_cover_letter_for_job_record_llm",
                 return_value={
                     "job_id": "job-1",
                     "job_title": "Senior Data Analyst",

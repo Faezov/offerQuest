@@ -6,6 +6,7 @@ from pathlib import Path
 from . import config as _config
 from .extractors import read_document_text
 from .matching import find_pattern_matches
+from .types import CandidateProfile
 
 SECTION_HEADERS = {
     "Professional Summary",
@@ -30,7 +31,7 @@ NAME_DEGREE_SUFFIXES = [
 def build_profile_from_files(
     cv_path: str | Path,
     cover_letter_path: str | Path,
-) -> dict:
+) -> CandidateProfile:
     cv_text = read_document_text(cv_path)
     cover_letter_text = read_document_text(cover_letter_path)
     return build_candidate_profile(
@@ -47,7 +48,7 @@ def build_candidate_profile(
     *,
     cv_path: str | None = None,
     cover_letter_path: str | None = None,
-) -> dict:
+) -> CandidateProfile:
     sections = split_cv_sections(cv_text)
     combined_text = "\n".join([cv_text, cover_letter_text])
 

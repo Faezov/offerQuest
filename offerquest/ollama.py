@@ -5,16 +5,15 @@ import os
 import re
 import shutil
 import signal
-import socket
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from .errors import OllamaError
-
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_LINUX_AMD64_DOWNLOAD_URL = "https://ollama.com/download/ollama-linux-amd64.tar.zst"
@@ -580,7 +579,7 @@ def _post_json(
     try:
         with urlopen(request, timeout=timeout_seconds) as response:
             body = response.read().decode("utf-8")
-    except (TimeoutError, socket.timeout) as exc:
+    except TimeoutError as exc:
         raise OllamaError(
             f"Ollama request timed out after {timeout_seconds} seconds."
         ) from exc
@@ -639,7 +638,7 @@ def _iter_post_json_stream(
                     yield json.loads(line)
                 except json.JSONDecodeError as exc:
                     raise OllamaError("Ollama returned invalid streamed JSON.") from exc
-    except (TimeoutError, socket.timeout) as exc:
+    except TimeoutError as exc:
         raise OllamaError(
             f"Ollama request timed out after {timeout_seconds} seconds."
         ) from exc
@@ -870,7 +869,7 @@ def _download_file_with_progress(
                         completed_bytes=downloaded,
                         total_bytes=total,
                     )
-    except (TimeoutError, socket.timeout) as exc:
+    except TimeoutError as exc:
         destination.unlink(missing_ok=True)
         raise OllamaError("Ollama runtime download timed out.") from exc
     except URLError as exc:
@@ -887,8 +886,7 @@ def _validate_archive_path(path: Path) -> bool:
     try:
         completed = subprocess.run(
             ["zstd", "-t", str(path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             check=False,
         )

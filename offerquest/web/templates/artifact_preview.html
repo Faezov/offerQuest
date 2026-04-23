@@ -34,7 +34,11 @@
     {% endif %}
 
     {% if preview.content %}
-      <pre class="code-preview"><code>{{ preview.content }}</code></pre>
+      <div class="button-row">
+        <button class="secondary-button secondary-button--compact" type="button" data-copy-target="#artifact-preview-content">Copy Preview Text</button>
+        <button class="secondary-button secondary-button--compact" type="button" data-copy-text="{{ preview.path }}">Copy Absolute Path</button>
+      </div>
+      <pre id="artifact-preview-content" class="code-preview"><code>{{ preview.content }}</code></pre>
     {% endif %}
   </section>
 {% endblock %}

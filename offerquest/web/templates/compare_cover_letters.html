@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+  {% set field_errors = view.field_errors or {} %}
   <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
@@ -72,37 +73,46 @@
             </div>
           </div>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('cv_path') %} field--error{% endif %}">
             <span>CV file</span>
-            <select name="cv_path" required>
+            <select name="cv_path" required aria-invalid="{{ 'true' if field_errors.get('cv_path') else 'false' }}" {% if view.first_error_field == 'cv_path' %}data-error-focus="true"{% endif %}>
               {% for document in view.documents %}
                 <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
               {% endfor %}
             </select>
+            {% if field_errors.get('cv_path') %}
+              <span class="field__error">{{ field_errors.get('cv_path') }}</span>
+            {% endif %}
           </label>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('base_cover_letter_path') %} field--error{% endif %}">
             <span>Base cover letter file</span>
-            <select name="base_cover_letter_path">
+            <select name="base_cover_letter_path" aria-invalid="{{ 'true' if field_errors.get('base_cover_letter_path') else 'false' }}" {% if view.first_error_field == 'base_cover_letter_path' %}data-error-focus="true"{% endif %}>
               <option value="">None</option>
               {% for document in view.documents %}
                 <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
               {% endfor %}
             </select>
+            {% if field_errors.get('base_cover_letter_path') %}
+              <span class="field__error">{{ field_errors.get('base_cover_letter_path') }}</span>
+            {% endif %}
           </label>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('jobs_file') %} field--error{% endif %}">
             <span>Jobs file</span>
-            <select name="jobs_file" required>
+            <select name="jobs_file" required aria-invalid="{{ 'true' if field_errors.get('jobs_file') else 'false' }}" {% if view.first_error_field == 'jobs_file' %}data-error-focus="true"{% endif %}>
               {% for item in view.jobs_files %}
                 <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
                   {{ item.relative_path }} ({{ item.record_count }} records)
                 </option>
               {% endfor %}
             </select>
+            {% if field_errors.get('jobs_file') %}
+              <span class="field__error">{{ field_errors.get('jobs_file') }}</span>
+            {% endif %}
           </label>
 
-          <details class="form-disclosure">
+          <details class="form-disclosure" {% if field_errors.get('rule_based_output_path') or field_errors.get('llm_output_path') %}open{% endif %}>
             <summary class="form-disclosure__summary">
               <div class="form-disclosure__intro">
                 <p class="eyebrow">Advanced Output</p>
@@ -110,19 +120,27 @@
               </div>
             </summary>
             <div class="form-disclosure__body compare-output-grid">
-              <label class="field">
+              <label class="field{% if field_errors.get('rule_based_output_path') %} field--error{% endif %}">
                 <span>Rule-based output path</span>
-                <input type="text" name="rule_based_output_path" value="{{ view.selected_rule_based_output }}" required>
+                <input type="text" name="rule_based_output_path" value="{{ view.selected_rule_based_output }}" required aria-invalid="{{ 'true' if field_errors.get('rule_based_output_path') else 'false' }}" {% if view.first_error_field == 'rule_based_output_path' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">Default: <code>{{ view.selected_rule_based_output }}</code></span>
+                {% if field_errors.get('rule_based_output_path') %}
+                  <span class="field__error">{{ field_errors.get('rule_based_output_path') }}</span>
+                {% endif %}
               </label>
 
-              <label class="field">
+              <label class="field{% if field_errors.get('llm_output_path') %} field--error{% endif %}">
                 <span>LLM output path</span>
-                <input type="text" name="llm_output_path" value="{{ view.selected_llm_output }}" required>
+                <input type="text" name="llm_output_path" value="{{ view.selected_llm_output }}" required aria-invalid="{{ 'true' if field_errors.get('llm_output_path') else 'false' }}" {% if view.first_error_field == 'llm_output_path' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">Default: <code>{{ view.selected_llm_output }}</code></span>
+                {% if field_errors.get('llm_output_path') %}
+                  <span class="field__error">{{ field_errors.get('llm_output_path') }}</span>
+                {% endif %}
               </label>
             </div>
           </details>
 
-          <details class="form-disclosure" {% if view.ollama_needs_setup %}open{% endif %}>
+          <details class="form-disclosure" {% if view.ollama_needs_setup or field_errors.get('llm_timeout_seconds') %}open{% endif %}>
             <summary class="form-disclosure__summary">
               <div class="form-disclosure__intro">
                 <p class="eyebrow">LLM Settings</p>
@@ -173,9 +191,13 @@
                 <input type="text" name="llm_base_url" value="{{ view.selected_llm_base_url }}">
               </label>
 
-              <label class="field">
+              <label class="field{% if field_errors.get('llm_timeout_seconds') %} field--error{% endif %}">
                 <span>Timeout seconds</span>
-                <input type="text" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}">
+                <input type="number" name="llm_timeout_seconds" value="{{ view.selected_llm_timeout_seconds }}" min="1" step="1" aria-invalid="{{ 'true' if field_errors.get('llm_timeout_seconds') else 'false' }}" {% if view.first_error_field == 'llm_timeout_seconds' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">Increase this if the local model needs more time to finish both drafts.</span>
+                {% if field_errors.get('llm_timeout_seconds') %}
+                  <span class="field__error">{{ field_errors.get('llm_timeout_seconds') }}</span>
+                {% endif %}
               </label>
             </div>
           </details>
@@ -217,6 +239,8 @@
       <div class="button-row">
         <a class="primary-button" href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ view.selected_job.job_id }}&mode=rule_based{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Revise Single Draft</a>
         <a class="secondary-button" href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.selected_job.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Review CV Draft</a>
+        <button class="secondary-button" type="button" data-copy-text="{{ view.result.rule_based.output_path_relative }}">Copy Rule-Based Path</button>
+        <button class="secondary-button" type="button" data-copy-text="{{ view.result.llm.output_path_relative }}">Copy LLM Path</button>
       </div>
       <dl class="detail-grid">
         <div>
@@ -314,14 +338,20 @@
         <div class="panel__header">
           <h2>Rule-Based Text</h2>
         </div>
-        <pre class="code-preview"><code>{{ view.result.rule_based.payload.cover_letter_text }}</code></pre>
+        <div class="button-row">
+          <button class="secondary-button secondary-button--compact" type="button" data-copy-target="#rule-based-draft">Copy Text</button>
+        </div>
+        <pre id="rule-based-draft" class="code-preview"><code>{{ view.result.rule_based.payload.cover_letter_text }}</code></pre>
       </article>
 
       <article class="panel compare-drafts__panel">
         <div class="panel__header">
           <h2>LLM Text</h2>
         </div>
-        <pre class="code-preview"><code>{{ view.result.llm.payload.cover_letter_text }}</code></pre>
+        <div class="button-row">
+          <button class="secondary-button secondary-button--compact" type="button" data-copy-target="#llm-draft">Copy Text</button>
+        </div>
+        <pre id="llm-draft" class="code-preview"><code>{{ view.result.llm.payload.cover_letter_text }}</code></pre>
       </article>
     </section>
   {% endif %}

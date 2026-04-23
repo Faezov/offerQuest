@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+  {% set field_errors = view.field_errors or {} %}
   <section class="panel-grid">
     <article class="panel">
       <div class="panel__header">
@@ -71,37 +72,46 @@
             {% endif %}
           </div>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('cv_path') %} field--error{% endif %}">
             <span>CV file</span>
-            <select name="cv_path" required>
+            <select name="cv_path" required aria-invalid="{{ 'true' if field_errors.get('cv_path') else 'false' }}" {% if view.first_error_field == 'cv_path' %}data-error-focus="true"{% endif %}>
               {% for document in view.documents %}
                 <option value="{{ document }}" {% if document == view.selected_cv %}selected{% endif %}>{{ document }}</option>
               {% endfor %}
             </select>
+            {% if field_errors.get('cv_path') %}
+              <span class="field__error">{{ field_errors.get('cv_path') }}</span>
+            {% endif %}
           </label>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('base_cover_letter_path') %} field--error{% endif %}">
             <span>Base cover letter file</span>
-            <select name="base_cover_letter_path">
+            <select name="base_cover_letter_path" aria-invalid="{{ 'true' if field_errors.get('base_cover_letter_path') else 'false' }}" {% if view.first_error_field == 'base_cover_letter_path' %}data-error-focus="true"{% endif %}>
               <option value="">None</option>
               {% for document in view.documents %}
                 <option value="{{ document }}" {% if document == view.selected_base_cover_letter %}selected{% endif %}>{{ document }}</option>
               {% endfor %}
             </select>
+            {% if field_errors.get('base_cover_letter_path') %}
+              <span class="field__error">{{ field_errors.get('base_cover_letter_path') }}</span>
+            {% endif %}
           </label>
 
-          <label class="field">
+          <label class="field{% if field_errors.get('jobs_file') %} field--error{% endif %}">
             <span>Jobs file</span>
-            <select name="jobs_file" required>
+            <select name="jobs_file" required aria-invalid="{{ 'true' if field_errors.get('jobs_file') else 'false' }}" {% if view.first_error_field == 'jobs_file' %}data-error-focus="true"{% endif %}>
               {% for item in view.jobs_files %}
                 <option value="{{ item.relative_path }}" {% if item.relative_path == view.selected_jobs_file %}selected{% endif %}>
                   {{ item.relative_path }} ({{ item.record_count }} records)
                 </option>
               {% endfor %}
             </select>
+            {% if field_errors.get('jobs_file') %}
+              <span class="field__error">{{ field_errors.get('jobs_file') }}</span>
+            {% endif %}
           </label>
 
-          <details class="form-disclosure">
+          <details class="form-disclosure" {% if field_errors.get('output_path') %}open{% endif %}>
             <summary class="form-disclosure__summary">
               <div class="form-disclosure__intro">
                 <p class="eyebrow">Advanced Output</p>
@@ -109,9 +119,13 @@
               </div>
             </summary>
             <div class="form-disclosure__body">
-              <label class="field">
+              <label class="field{% if field_errors.get('output_path') %} field--error{% endif %}">
                 <span>Output JSON path</span>
-                <input type="text" name="output_path" value="{{ view.selected_output }}" required>
+                <input type="text" name="output_path" value="{{ view.selected_output }}" required aria-invalid="{{ 'true' if field_errors.get('output_path') else 'false' }}" {% if view.first_error_field == 'output_path' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">Default: <code>{{ view.selected_output }}</code></span>
+                {% if field_errors.get('output_path') %}
+                  <span class="field__error">{{ field_errors.get('output_path') }}</span>
+                {% endif %}
               </label>
             </div>
           </details>
@@ -146,6 +160,7 @@
       <div class="button-row">
         <a class="primary-button" href="{{ request.url_for('build_resume_tailored_draft_page') }}?job_id={{ view.selected_job.job_id }}{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Build Tailored Draft</a>
         <a class="secondary-button" href="{{ request.url_for('build_cover_letter_page') }}?job_id={{ view.selected_job.job_id }}&mode=rule_based{% if view.selected_ranking_file %}&ranking_file={{ view.selected_ranking_file }}{% endif %}">Draft Cover Letter</a>
+        <button class="secondary-button" type="button" data-copy-text="{{ view.result.output_path_relative }}">Copy Output Path</button>
       </div>
       <dl class="detail-grid">
         <div>

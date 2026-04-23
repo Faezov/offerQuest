@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
+  {% set credentials_field_errors = view.credentials_field_errors or {} %}
+  {% set source_field_errors = view.source_field_errors or {} %}
+  {% set refresh_field_errors = view.refresh_field_errors or {} %}
   <section>
     <details class="setup-disclosure" {% if view.credentials_panel_open %}open{% endif %}>
       <summary class="setup-disclosure__summary">
@@ -51,7 +54,7 @@
               <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
               <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
 
-              <label class="field">
+              <label class="field{% if credentials_field_errors.get('app_id') %} field--error{% endif %}">
                 <span>Adzuna app id</span>
                 <input
                   type="text"
@@ -59,10 +62,15 @@
                   value="{{ view.entered_app_id }}"
                   placeholder="{% if view.credentials.saved_app_id_masked %}Leave blank to keep {{ view.credentials.saved_app_id_masked }}{% else %}Paste your Adzuna app id{% endif %}"
                   autocomplete="off"
+                  aria-invalid="{{ 'true' if credentials_field_errors.get('app_id') else 'false' }}"
+                  {% if view.credentials_first_error_field == 'app_id' %}data-error-focus="true"{% endif %}
                 >
+                {% if credentials_field_errors.get('app_id') %}
+                  <span class="field__error">{{ credentials_field_errors.get('app_id') }}</span>
+                {% endif %}
               </label>
 
-              <label class="field">
+              <label class="field{% if credentials_field_errors.get('app_key') %} field--error{% endif %}">
                 <span>Adzuna app key</span>
                 <input
                   type="password"
@@ -70,7 +78,12 @@
                   value=""
                   placeholder="{% if view.credentials.saved_app_key_masked %}Leave blank to keep current saved key{% else %}Paste your Adzuna app key{% endif %}"
                   autocomplete="off"
+                  aria-invalid="{{ 'true' if credentials_field_errors.get('app_key') else 'false' }}"
+                  {% if view.credentials_first_error_field == 'app_key' %}data-error-focus="true"{% endif %}
                 >
+                {% if credentials_field_errors.get('app_key') %}
+                  <span class="field__error">{{ credentials_field_errors.get('app_key') }}</span>
+                {% endif %}
               </label>
 
               <div class="subsection">
@@ -190,96 +203,151 @@
           <p><strong>{{ view.source_form_result.action | replace("_", " ") | title }}:</strong> {{ view.source_form_result.source_name }}</p>
           <p><strong>Config file:</strong> <code>{{ view.source_form_result.config_path_relative }}</code></p>
           <p><strong>Source count:</strong> {{ view.source_form_result.source_count }}</p>
+          {% if view.source_form_result.restorable_source_form_data %}
+            <form method="post" class="inline-form">
+              <input type="hidden" name="intent" value="restore_source">
+              <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
+              <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
+              <input type="hidden" name="source_index" value="">
+              <input type="hidden" name="source_name" value="{{ view.source_form_result.restorable_source_form_data.name }}">
+              <input type="hidden" name="source_type" value="{{ view.source_form_result.restorable_source_form_data.type }}">
+              <input type="hidden" name="source_enabled" value="{{ view.source_form_result.restorable_source_form_data.enabled }}">
+              <input type="hidden" name="source_output" value="{{ view.source_form_result.restorable_source_form_data.output }}">
+              <input type="hidden" name="adzuna_what" value="{{ view.source_form_result.restorable_source_form_data.what }}">
+              <input type="hidden" name="adzuna_where" value="{{ view.source_form_result.restorable_source_form_data.where }}">
+              <input type="hidden" name="adzuna_country" value="{{ view.source_form_result.restorable_source_form_data.country }}">
+              <input type="hidden" name="adzuna_pages" value="{{ view.source_form_result.restorable_source_form_data.pages }}">
+              <input type="hidden" name="adzuna_results_per_page" value="{{ view.source_form_result.restorable_source_form_data.results_per_page }}">
+              <input type="hidden" name="greenhouse_board_token" value="{{ view.source_form_result.restorable_source_form_data.board_token }}">
+              <input type="hidden" name="manual_input_path" value="{{ view.source_form_result.restorable_source_form_data.input_path }}">
+              <p class="button-row">
+                <button class="secondary-button" type="submit">Undo Delete</button>
+              </p>
+            </form>
+          {% endif %}
         </div>
       {% endif %}
 
-      <form method="post" class="form-stack">
-        <input type="hidden" name="intent" value="save_source">
-        <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
-        <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
-        <input type="hidden" name="source_index" value="{{ view.source_form.source_index }}">
+        <form method="post" class="form-stack">
+          <input type="hidden" name="intent" value="save_source">
+          <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
+          <input type="hidden" name="output_dir" value="{{ view.selected_refresh_output_dir }}">
+          <input type="hidden" name="source_index" value="{{ view.source_form.source_index }}">
 
-        <div class="field-grid">
-          <label class="field">
-            <span>Source name</span>
-            <input type="text" name="source_name" value="{{ view.source_form.name }}" required>
-          </label>
-
-          <label class="field">
-            <span>Source type</span>
-            <select name="source_type" required>
-              {% for source_type in view.source_type_options %}
-                <option value="{{ source_type }}" {% if source_type == view.source_form.type %}selected{% endif %}>{{ source_type }}</option>
-              {% endfor %}
-            </select>
-          </label>
-        </div>
-
-        <div class="field-grid">
-          <label class="field">
-            <span>Output file</span>
-            <input type="text" name="source_output" value="{{ view.source_form.output }}" placeholder="auto-generated if left blank">
-          </label>
-
-          <label class="field">
-            <span>Enabled</span>
-            <select name="source_enabled">
-              <option value="true" {% if view.source_form.enabled == "true" %}selected{% endif %}>Enabled</option>
-              <option value="false" {% if view.source_form.enabled == "false" %}selected{% endif %}>Disabled</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="subsection">
-          <h3>Adzuna Fields</h3>
-          <p class="subsection__summary">Used only when source type is <code>adzuna</code>. These streams use the saved Adzuna app id and app key from the setup panel above.</p>
           <div class="field-grid">
-            <label class="field">
-              <span>Keywords</span>
-              <input type="text" name="adzuna_what" value="{{ view.source_form.what }}" placeholder="reporting analyst">
+            <label class="field{% if source_field_errors.get('source_name') %} field--error{% endif %}">
+              <span>Source name</span>
+              <input type="text" name="source_name" value="{{ view.source_form.name }}" required aria-invalid="{{ 'true' if source_field_errors.get('source_name') else 'false' }}" {% if view.source_first_error_field == 'source_name' %}data-error-focus="true"{% endif %}>
+              <span class="field__hint">Use a name that will still make sense in the merged job stream later.</span>
+              {% if source_field_errors.get('source_name') %}
+                <span class="field__error">{{ source_field_errors.get('source_name') }}</span>
+              {% endif %}
             </label>
 
-            <label class="field">
-              <span>Location</span>
-              <input type="text" name="adzuna_where" value="{{ view.source_form.where }}" placeholder="Sydney">
+            <label class="field{% if source_field_errors.get('source_type') %} field--error{% endif %}">
+              <span>Source type</span>
+              <select name="source_type" required data-source-type-select aria-invalid="{{ 'true' if source_field_errors.get('source_type') else 'false' }}" {% if view.source_first_error_field == 'source_type' %}data-error-focus="true"{% endif %}>
+                {% for source_type in view.source_type_options %}
+                  <option value="{{ source_type }}" {% if source_type == view.source_form.type %}selected{% endif %}>{{ source_type }}</option>
+                {% endfor %}
+              </select>
+              {% if source_field_errors.get('source_type') %}
+                <span class="field__error">{{ source_field_errors.get('source_type') }}</span>
+              {% endif %}
             </label>
           </div>
 
           <div class="field-grid">
-            <label class="field">
-              <span>Country</span>
-              <input type="text" name="adzuna_country" value="{{ view.source_form.country }}">
+            <label class="field{% if source_field_errors.get('source_output') %} field--error{% endif %}">
+              <span>Output file</span>
+              <input type="text" name="source_output" value="{{ view.source_form.output }}" placeholder="auto-generated if left blank" aria-invalid="{{ 'true' if source_field_errors.get('source_output') else 'false' }}" {% if view.source_first_error_field == 'source_output' %}data-error-focus="true"{% endif %}>
+              <span class="field__hint">Leave this blank unless you want to override the generated filename.</span>
+              {% if source_field_errors.get('source_output') %}
+                <span class="field__error">{{ source_field_errors.get('source_output') }}</span>
+              {% endif %}
             </label>
 
             <label class="field">
-              <span>Pages</span>
-              <input type="text" name="adzuna_pages" value="{{ view.source_form.pages }}">
-            </label>
-
-            <label class="field">
-              <span>Results per page</span>
-              <input type="text" name="adzuna_results_per_page" value="{{ view.source_form.results_per_page }}">
+              <span>Enabled</span>
+              <select name="source_enabled">
+                <option value="true" {% if view.source_form.enabled == "true" %}selected{% endif %}>Enabled</option>
+                <option value="false" {% if view.source_form.enabled == "false" %}selected{% endif %}>Disabled</option>
+              </select>
             </label>
           </div>
-        </div>
 
-        <div class="subsection">
-          <h3>Greenhouse Fields</h3>
-          <p class="subsection__summary">Used only when source type is <code>greenhouse</code>. For OfferQuest job pulls this is a public board token, not a private API key.</p>
-          <label class="field">
-            <span>Board token</span>
-            <input type="text" name="greenhouse_board_token" value="{{ view.source_form.board_token }}" placeholder="example-company">
-          </label>
-        </div>
+          <div class="subsection" data-source-fields="adzuna" {% if view.source_form.type != "adzuna" %}hidden{% endif %}>
+            <h3>Adzuna Fields</h3>
+            <p class="subsection__summary">Used only when source type is <code>adzuna</code>. These streams use the saved Adzuna app id and app key from the setup panel above.</p>
+            <div class="field-grid">
+              <label class="field{% if source_field_errors.get('adzuna_what') %} field--error{% endif %}">
+                <span>Keywords</span>
+                <input type="text" name="adzuna_what" value="{{ view.source_form.what }}" placeholder="reporting analyst" aria-invalid="{{ 'true' if source_field_errors.get('adzuna_what') else 'false' }}" {% if view.source_first_error_field == 'adzuna_what' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">Use this for the role or capability you want Adzuna to search for.</span>
+                {% if source_field_errors.get('adzuna_what') %}
+                  <span class="field__error">{{ source_field_errors.get('adzuna_what') }}</span>
+                {% endif %}
+              </label>
 
-        <div class="subsection">
-          <h3>Manual Fields</h3>
-          <p class="subsection__summary">Used only when source type is <code>manual</code>.</p>
-          <label class="field">
-            <span>Input path</span>
-            <input type="text" name="manual_input_path" value="{{ view.source_form.input_path }}" placeholder="jobs">
-          </label>
-        </div>
+              <label class="field{% if source_field_errors.get('adzuna_where') %} field--error{% endif %}">
+                <span>Location</span>
+                <input type="text" name="adzuna_where" value="{{ view.source_form.where }}" placeholder="Sydney" aria-invalid="{{ 'true' if source_field_errors.get('adzuna_where') else 'false' }}" {% if view.source_first_error_field == 'adzuna_where' %}data-error-focus="true"{% endif %}>
+                <span class="field__hint">You can leave this broad or use it instead of keywords.</span>
+                {% if source_field_errors.get('adzuna_where') %}
+                  <span class="field__error">{{ source_field_errors.get('adzuna_where') }}</span>
+                {% endif %}
+              </label>
+            </div>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>Country</span>
+                <input type="text" name="adzuna_country" value="{{ view.source_form.country }}">
+              </label>
+
+              <label class="field{% if source_field_errors.get('adzuna_pages') %} field--error{% endif %}">
+                <span>Pages</span>
+                <input type="number" name="adzuna_pages" value="{{ view.source_form.pages }}" min="1" step="1" aria-invalid="{{ 'true' if source_field_errors.get('adzuna_pages') else 'false' }}" {% if view.source_first_error_field == 'adzuna_pages' %}data-error-focus="true"{% endif %}>
+                {% if source_field_errors.get('adzuna_pages') %}
+                  <span class="field__error">{{ source_field_errors.get('adzuna_pages') }}</span>
+                {% endif %}
+              </label>
+
+              <label class="field{% if source_field_errors.get('adzuna_results_per_page') %} field--error{% endif %}">
+                <span>Results per page</span>
+                <input type="number" name="adzuna_results_per_page" value="{{ view.source_form.results_per_page }}" min="1" step="1" aria-invalid="{{ 'true' if source_field_errors.get('adzuna_results_per_page') else 'false' }}" {% if view.source_first_error_field == 'adzuna_results_per_page' %}data-error-focus="true"{% endif %}>
+                {% if source_field_errors.get('adzuna_results_per_page') %}
+                  <span class="field__error">{{ source_field_errors.get('adzuna_results_per_page') }}</span>
+                {% endif %}
+              </label>
+            </div>
+          </div>
+
+          <div class="subsection" data-source-fields="greenhouse" {% if view.source_form.type != "greenhouse" %}hidden{% endif %}>
+            <h3>Greenhouse Fields</h3>
+            <p class="subsection__summary">Used only when source type is <code>greenhouse</code>. For OfferQuest job pulls this is a public board token, not a private API key.</p>
+            <label class="field{% if source_field_errors.get('greenhouse_board_token') %} field--error{% endif %}">
+              <span>Board token</span>
+              <input type="text" name="greenhouse_board_token" value="{{ view.source_form.board_token }}" placeholder="example-company" aria-invalid="{{ 'true' if source_field_errors.get('greenhouse_board_token') else 'false' }}" {% if view.source_first_error_field == 'greenhouse_board_token' %}data-error-focus="true"{% endif %}>
+              <span class="field__hint">Use only the token part, not the full Greenhouse URL.</span>
+              {% if source_field_errors.get('greenhouse_board_token') %}
+                <span class="field__error">{{ source_field_errors.get('greenhouse_board_token') }}</span>
+              {% endif %}
+            </label>
+          </div>
+
+          <div class="subsection" data-source-fields="manual" {% if view.source_form.type != "manual" %}hidden{% endif %}>
+            <h3>Manual Fields</h3>
+            <p class="subsection__summary">Used only when source type is <code>manual</code>.</p>
+            <label class="field{% if source_field_errors.get('manual_input_path') %} field--error{% endif %}">
+              <span>Input path</span>
+              <input type="text" name="manual_input_path" value="{{ view.source_form.input_path }}" placeholder="jobs" aria-invalid="{{ 'true' if source_field_errors.get('manual_input_path') else 'false' }}" {% if view.source_first_error_field == 'manual_input_path' %}data-error-focus="true"{% endif %}>
+              <span class="field__hint">Point this to the local folder or file that contains your manually collected jobs.</span>
+              {% if source_field_errors.get('manual_input_path') %}
+                <span class="field__error">{{ source_field_errors.get('manual_input_path') }}</span>
+              {% endif %}
+            </label>
+          </div>
 
         <div class="button-row">
           <button class="primary-button" type="submit">{{ "Update Source" if view.source_form_mode == "edit" else "Add Source" }}</button>
@@ -353,7 +421,7 @@
                   <button class="secondary-button" type="submit">{{ "Disable" if source.enabled else "Enable" }}</button>
                 </form>
 
-                <form method="post" class="inline-form">
+                <form method="post" class="inline-form" data-confirm-message="Delete {{ source.name }}? You can undo it from the success message on this page.">
                   <input type="hidden" name="intent" value="delete_source">
                   <input type="hidden" name="source_index" value="{{ source.index }}">
                   <input type="hidden" name="config_path" value="{{ view.selected_refresh_config_path }}">
@@ -389,14 +457,20 @@
         <input type="hidden" name="intent" value="refresh_jobs">
 
         <div class="field-grid">
-          <label class="field">
+          <label class="field{% if refresh_field_errors.get('config_path') %} field--error{% endif %}">
             <span>Config path</span>
-            <input type="text" name="config_path" value="{{ view.selected_refresh_config_path }}" required>
+            <input type="text" name="config_path" value="{{ view.selected_refresh_config_path }}" required aria-invalid="{{ 'true' if refresh_field_errors.get('config_path') else 'false' }}" {% if view.refresh_first_error_field == 'config_path' %}data-error-focus="true"{% endif %}>
+            {% if refresh_field_errors.get('config_path') %}
+              <span class="field__error">{{ refresh_field_errors.get('config_path') }}</span>
+            {% endif %}
           </label>
 
-          <label class="field">
+          <label class="field{% if refresh_field_errors.get('output_dir') %} field--error{% endif %}">
             <span>Output directory</span>
-            <input type="text" name="output_dir" value="{{ view.selected_refresh_output_dir }}" required>
+            <input type="text" name="output_dir" value="{{ view.selected_refresh_output_dir }}" required aria-invalid="{{ 'true' if refresh_field_errors.get('output_dir') else 'false' }}" {% if view.refresh_first_error_field == 'output_dir' %}data-error-focus="true"{% endif %}>
+            {% if refresh_field_errors.get('output_dir') %}
+              <span class="field__error">{{ refresh_field_errors.get('output_dir') }}</span>
+            {% endif %}
           </label>
         </div>
 

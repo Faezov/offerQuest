@@ -348,6 +348,10 @@
       const actionButtons = document.querySelectorAll("form[data-ollama-action] button[type='submit']");
       let activePoll = null;
 
+      actionButtons.forEach((button) => {
+        button.dataset.originalText = button.textContent;
+      });
+
       const setProgress = (value, message, detail) => {
         const normalized = Number.isFinite(Number(value)) ? Math.max(0, Math.min(100, Math.round(Number(value)))) : 0;
         if (progressBar) {
@@ -374,11 +378,20 @@
         });
       };
 
+      const restoreButtonLabels = () => {
+        actionButtons.forEach((button) => {
+          if (button.dataset.originalText) {
+            button.textContent = button.dataset.originalText;
+          }
+        });
+      };
+
       const showError = (message) => {
         progress.hidden = false;
         progress.classList.remove("working-callout--active");
         progress.classList.add("working-callout--error");
         setProgress(100, "Ollama action failed", message);
+        restoreButtonLabels();
         setButtonsDisabled(false);
       };
 
@@ -444,6 +457,7 @@
           setButtonsDisabled(true);
 
           if (submitButton) {
+            submitButton.dataset.originalText = submitButton.dataset.originalText || submitButton.textContent;
             submitButton.textContent = "Working...";
           }
 

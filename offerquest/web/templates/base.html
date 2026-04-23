@@ -43,6 +43,106 @@
         {% block content %}{% endblock %}
       </main>
     </div>
+    <script>
+      (() => {
+        const focusTarget = document.querySelector("[data-error-focus='true']");
+        if (focusTarget) {
+          const disclosure = focusTarget.closest("details");
+          if (disclosure) {
+            disclosure.open = true;
+          }
+          window.requestAnimationFrame(() => focusTarget.focus());
+        }
+
+        document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
+          form.addEventListener("submit", (event) => {
+            if (form.dataset.confirmed === "true") {
+              return;
+            }
+            const message = form.dataset.confirmMessage || "Are you sure?";
+            if (!window.confirm(message)) {
+              event.preventDefault();
+              return;
+            }
+            form.dataset.confirmed = "true";
+          });
+        });
+
+        document.querySelectorAll("[data-copy-text], [data-copy-target]").forEach((button) => {
+          button.addEventListener("click", async () => {
+            if (!navigator.clipboard) {
+              return;
+            }
+            let text = button.dataset.copyText || "";
+            if (!text && button.dataset.copyTarget) {
+              const target = document.querySelector(button.dataset.copyTarget);
+              text = target ? target.textContent || "" : "";
+            }
+            if (!text.trim()) {
+              return;
+            }
+
+            const originalText = button.textContent;
+            try {
+              await navigator.clipboard.writeText(text.trimEnd());
+              button.textContent = button.dataset.copySuccess || "Copied";
+            } catch (error) {
+              button.textContent = "Copy failed";
+            }
+            window.setTimeout(() => {
+              button.textContent = originalText;
+            }, 1600);
+          });
+        });
+
+        const sourceTypeSelect = document.querySelector("[data-source-type-select]");
+        if (sourceTypeSelect) {
+          const syncSourceSections = () => {
+            const selectedType = sourceTypeSelect.value;
+            document.querySelectorAll("[data-source-fields]").forEach((section) => {
+              const matches = section.dataset.sourceFields === selectedType;
+              section.hidden = !matches;
+              section.setAttribute("aria-hidden", String(!matches));
+            });
+          };
+          syncSourceSections();
+          sourceTypeSelect.addEventListener("change", syncSourceSections);
+        }
+
+        const draftModeSelect = document.querySelector("[data-draft-mode-select]");
+        if (draftModeSelect) {
+          const llmSettings = document.querySelector("[data-llm-settings]");
+          const llmWarning = document.querySelector("[data-llm-warning]");
+          const syncDraftMode = () => {
+            const isLlmMode = draftModeSelect.value === "llm";
+            if (llmSettings) {
+              llmSettings.open = isLlmMode;
+            }
+            if (llmWarning) {
+              llmWarning.hidden = !isLlmMode;
+              llmWarning.setAttribute("aria-hidden", String(!isLlmMode));
+            }
+          };
+          syncDraftMode();
+          draftModeSelect.addEventListener("change", syncDraftMode);
+        }
+
+        document.querySelectorAll("[data-toggle-checkbox]").forEach((checkbox) => {
+          const targetSelector = checkbox.dataset.toggleTarget;
+          const target = targetSelector ? document.querySelector(targetSelector) : null;
+          if (!target) {
+            return;
+          }
+          const syncToggle = () => {
+            const visible = checkbox.checked;
+            target.hidden = !visible;
+            target.setAttribute("aria-hidden", String(!visible));
+          };
+          syncToggle();
+          checkbox.addEventListener("change", syncToggle);
+        });
+      })();
+    </script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

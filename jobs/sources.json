@@ -4,14 +4,13 @@
       "name": "manual-jobs",
       "type": "manual",
       "input_path": "jobs",
-      "output": "manual.jsonl"
+      "output": "manual.jsonl",
+      "enabled": false
     }
   ],
   "merge": {
     "enabled": true,
-    "inputs": [
-      "manual.jsonl"
-    ],
+    "inputs": [],
     "output": "all.jsonl"
   },
   "summary_output": "refresh-summary.json"

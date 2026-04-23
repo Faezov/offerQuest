@@ -1,82 +1,20 @@
 {
   "sources": [
     {
-      "name": "adzuna-au",
+      "name": "New Way",
       "type": "adzuna",
-      "what": "senior data analyst",
-      "where": "Sydney",
+      "output": "new-way.jsonl",
       "country": "au",
       "pages": 1,
       "results_per_page": 20,
-      "output": "adzuna-au.jsonl"
-    },
-    {
-      "name": "adzuna-reporting",
-      "type": "adzuna",
-      "what": "reporting analyst",
-      "where": "Sydney",
-      "country": "au",
-      "pages": 1,
-      "results_per_page": 20,
-      "output": "adzuna-reporting.jsonl"
-    },
-    {
-      "name": "adzuna-quality",
-      "type": "adzuna",
-      "what": "data quality analyst",
-      "where": "Sydney",
-      "country": "au",
-      "pages": 1,
-      "results_per_page": 20,
-      "output": "adzuna-quality.jsonl"
-    },
-    {
-      "name": "adzuna-metadata",
-      "type": "adzuna",
-      "what": "metadata analyst",
-      "where": "Sydney",
-      "country": "au",
-      "pages": 1,
-      "results_per_page": 20,
-      "output": "adzuna-metadata.jsonl"
-    },
-    {
-      "name": "adzuna-governance",
-      "type": "adzuna",
-      "what": "data governance analyst",
-      "where": "Sydney",
-      "country": "au",
-      "pages": 1,
-      "results_per_page": 20,
-      "output": "adzuna-governance.jsonl"
-    },
-    {
-      "name": "adzuna-health",
-      "type": "adzuna",
-      "what": "health data analyst",
-      "where": "Sydney",
-      "country": "au",
-      "pages": 1,
-      "results_per_page": 20,
-      "output": "adzuna-health.jsonl"
-    },
-    {
-      "name": "manual",
-      "type": "manual",
-      "input_path": "jobs",
-      "output": "manual.jsonl"
+      "what": "Scientist",
+      "where": "Sydney"
     }
   ],
   "merge": {
     "enabled": true,
     "inputs": [
-      "adzuna-au.jsonl",
-      "adzuna-reporting.jsonl",
-      "adzuna-quality.jsonl",
-      "adzuna-metadata.jsonl",
-      "adzuna-governance.jsonl",
-      "adzuna-health.jsonl",
-      "manual.jsonl"
+      "new-way.jsonl"
     ],
     "output": "all.jsonl"
   },

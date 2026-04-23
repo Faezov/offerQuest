@@ -56,7 +56,7 @@ offerquest-workbench --root . --reload
 ```
 
 Then open `http://127.0.0.1:8787` in your browser.
-The `Job Sources` page can save Adzuna credentials into `~/.config/offerquest/adzuna.env` so browser-driven and CLI fetches can reuse them automatically.
+The `Job Sources` page can save Adzuna credentials into `~/.config/offerquest/adzuna.env`, keep those credentials tucked into a collapsible setup panel with short Adzuna and Greenhouse access guidance, edit `jobs/sources.json` through a structured form, and trigger a browser-driven jobs refresh so browser and CLI fetches can reuse the same setup automatically.
 
 Build a profile from the current documents:
 

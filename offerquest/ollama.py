@@ -7,7 +7,7 @@ import shutil
 import signal
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -615,7 +615,7 @@ def _iter_post_json_stream(
     payload: dict[str, Any],
     *,
     timeout_seconds: int = 60,
-):
+) -> Iterator[dict[str, Any]]:
     data = json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -924,6 +924,7 @@ def _format_bytes(size: int) -> str:
                 return f"{int(value)} {unit}"
             return f"{value:.1f} {unit}"
         value /= 1024
+    return f"{value:.1f} TB"
 
 
 def _summarize_process_output(*parts: str | None, max_lines: int = 8) -> str:

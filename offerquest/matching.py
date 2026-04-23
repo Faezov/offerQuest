@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -42,11 +43,11 @@ def contains_keyword(text: str | MatchableText, keyword: str) -> bool:
     return contains_token_sequence(prepared.tokens, needle)
 
 
-def contains_any_keyword(text: str | MatchableText, keywords: list[str]) -> bool:
+def contains_any_keyword(text: str | MatchableText, keywords: Sequence[str]) -> bool:
     return any(contains_keyword(text, keyword) for keyword in keywords)
 
 
-def find_pattern_matches(text: str | MatchableText, patterns: dict[str, list[str]]) -> list[str]:
+def find_pattern_matches(text: str | MatchableText, patterns: Mapping[str, Sequence[str]]) -> list[str]:
     return sorted(
         label
         for label, keywords in patterns.items()

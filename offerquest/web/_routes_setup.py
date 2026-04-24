@@ -1,10 +1,14 @@
 import logging
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from functools import partial
 from typing import Any
 
+from .. import ollama as ollama_core
 from ..errors import OfferQuestError
+from ..workbench import job_sources as job_sources_workbench
+from ..workbench import ollama_setup as ollama_setup_workbench
+from ..workbench import profile as profile_workbench
 from ._support import (
     FieldErrors,
     build_job_source_field_errors,
@@ -19,24 +23,6 @@ from ._support import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class SetupRouteDeps:
-    build_job_sources_view: Any
-    build_ollama_setup_view: Any
-    build_profile_form_view: Any
-    default_ollama_base_url: str
-    recommended_ollama_models: tuple[str, ...]
-    run_adzuna_credentials_save: Any
-    run_job_source_delete: Any
-    run_job_source_save: Any
-    run_job_source_toggle: Any
-    run_local_ollama_runtime_install: Any
-    run_ollama_models_pull: Any
-    run_ollama_server_restart: Any
-    run_profile_build: Any
-    run_refresh_jobs_build: Any
-
-
 def register_setup_routes(
     *,
     app: Any,
@@ -44,7 +30,6 @@ def register_setup_routes(
     project_state: Any,
     HTMLResponse: Any,
     JSONResponse: Any,
-    get_deps: Any,
 ) -> None:
     from fastapi import Request
 
@@ -54,11 +39,10 @@ def register_setup_routes(
         base_url: str | None,
         custom_model: str | None,
     ) -> list[str]:
-        deps = get_deps()
         if intent == "pull_recommended":
-            return list(deps.recommended_ollama_models)
+            return list(ollama_core.RECOMMENDED_OLLAMA_MODELS)
         if intent == "pull_missing_recommended":
-            current_view = deps.build_ollama_setup_view(
+            current_view = ollama_setup_workbench.build_ollama_setup_view(
                 project_state,
                 base_url=base_url,
                 custom_model=custom_model,
@@ -104,7 +88,6 @@ def register_setup_routes(
             message="Starting Ollama action",
             detail="Preparing the requested action.",
         )
-        deps = get_deps()
         try:
             if intent in {"pull_recommended", "pull_missing_recommended", "pull_custom"}:
                 models = resolve_ollama_action_models(
@@ -112,7 +95,7 @@ def register_setup_routes(
                     base_url=base_url,
                     custom_model=custom_model,
                 )
-                result = deps.run_ollama_models_pull(
+                result = ollama_setup_workbench.run_ollama_models_pull(
                     base_url=base_url,
                     models=models,
                     progress_callback=lambda payload: update_ollama_job_from_progress(job_id, payload),
@@ -130,7 +113,7 @@ def register_setup_routes(
                     ],
                 }
             elif intent == "download_runtime":
-                install_result = deps.run_local_ollama_runtime_install(
+                install_result = ollama_setup_workbench.run_local_ollama_runtime_install(
                     progress_callback=lambda payload: update_ollama_job_from_progress(job_id, payload),
                 )
                 action_result = {
@@ -147,7 +130,7 @@ def register_setup_routes(
                     message="Starting managed Ollama server",
                     detail="Waiting for the server to become reachable.",
                 )
-                restart_result = deps.run_ollama_server_restart(base_url=base_url)
+                restart_result = ollama_setup_workbench.run_ollama_server_restart(base_url=base_url)
                 action_result = {
                     "title": (
                         "Managed Ollama server restarted"
@@ -196,13 +179,12 @@ def register_setup_routes(
         edit_source: int | None = None,
         duplicate_source: int | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "job_sources.html",
             {
                 "page_title": "Job Sources",
-                "view": deps.build_job_sources_view(
+                "view": job_sources_workbench.build_job_sources_view(
                     project_state,
                     edit_source_index=edit_source,
                     duplicate_source_index=duplicate_source,
@@ -215,13 +197,12 @@ def register_setup_routes(
         request: Request,
         base_url: str | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "ollama_setup.html",
             {
                 "page_title": "Ollama Setup",
-                "view": deps.build_ollama_setup_view(
+                "view": ollama_setup_workbench.build_ollama_setup_view(
                     project_state,
                     base_url=base_url,
                 ),
@@ -234,8 +215,7 @@ def register_setup_routes(
         intent = str(form.get("intent") or "refresh_status").strip()
         base_url = str(form.get("base_url") or "").strip()
         custom_model = str(form.get("custom_model") or "").strip() or None
-        deps = get_deps()
-        normalized_base_url = base_url or deps.default_ollama_base_url
+        normalized_base_url = base_url or ollama_core.DEFAULT_OLLAMA_BASE_URL
 
         if intent == "refresh_status":
             return JSONResponse(
@@ -283,13 +263,12 @@ def register_setup_routes(
 
     @app.get("/build-profile", response_class=HTMLResponse)
     async def build_profile_page(request: Request) -> Any:
-        deps = get_deps()
         return render(
             request,
             "build_profile.html",
             {
                 "page_title": "Build Profile",
-                "view": deps.build_profile_form_view(project_state),
+                "view": profile_workbench.build_profile_form_view(project_state),
             },
         )
 
@@ -299,14 +278,13 @@ def register_setup_routes(
         cv_path = str(form.get("cv_path") or "").strip()
         cover_letter_path = str(form.get("cover_letter_path") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="build_profile.html",
             page_title="Build Profile",
-            build_view=partial(deps.build_profile_form_view, project_state),
+            build_view=partial(profile_workbench.build_profile_form_view, project_state),
             cv_path=cv_path or None,
             cover_letter_path=cover_letter_path or None,
             output_path=output_path or None,
@@ -329,7 +307,7 @@ def register_setup_routes(
             return validation_response
 
         try:
-            result = deps.run_profile_build(
+            result = profile_workbench.run_profile_build(
                 project_state,
                 cv_path=cv_path,
                 cover_letter_path=cover_letter_path,
@@ -366,7 +344,6 @@ def register_setup_routes(
             "input_path": str(form.get("manual_input_path") or "").strip(),
         }
         source_index_raw = str(form.get("source_index") or "").strip()
-        deps = get_deps()
 
         def render_view(
             *,
@@ -380,7 +357,7 @@ def register_setup_routes(
                 "job_sources.html",
                 {
                     "page_title": "Job Sources",
-                    "view": deps.build_job_sources_view(
+                    "view": job_sources_workbench.build_job_sources_view(
                         project_state,
                         app_id=app_id_value,
                         refresh_config_path=config_path_value,
@@ -402,7 +379,7 @@ def register_setup_routes(
                     source_field_errors=source_field_errors,
                 )
             try:
-                source_result = deps.run_job_source_save(
+                source_result = job_sources_workbench.run_job_source_save(
                     project_state,
                     source_form_data=source_form_data,
                 )
@@ -429,9 +406,9 @@ def register_setup_routes(
 
             try:
                 source_result = (
-                    deps.run_job_source_delete(project_state, source_index=source_index)
+                    job_sources_workbench.run_job_source_delete(project_state, source_index=source_index)
                     if intent == "delete_source"
-                    else deps.run_job_source_toggle(project_state, source_index=source_index)
+                    else job_sources_workbench.run_job_source_toggle(project_state, source_index=source_index)
                 )
             except (OSError, ValueError) as exc:
                 return render_view(
@@ -461,7 +438,7 @@ def register_setup_routes(
                 )
 
             try:
-                refresh_result = deps.run_refresh_jobs_build(
+                refresh_result = job_sources_workbench.run_refresh_jobs_build(
                     project_state,
                     config_path=config_path,
                     output_dir=output_dir,
@@ -482,7 +459,7 @@ def register_setup_routes(
             )
 
         try:
-            credentials_result = deps.run_adzuna_credentials_save(
+            credentials_result = job_sources_workbench.run_adzuna_credentials_save(
                 app_id=app_id or None,
                 app_key=app_key or None,
             )
@@ -506,14 +483,13 @@ def register_setup_routes(
         intent = str(form.get("intent") or "refresh_status").strip()
         base_url = str(form.get("base_url") or "").strip() or None
         custom_model = str(form.get("custom_model") or "").strip() or None
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="ollama_setup.html",
             page_title="Ollama Setup",
-            build_view=partial(deps.build_ollama_setup_view, project_state),
+            build_view=partial(ollama_setup_workbench.build_ollama_setup_view, project_state),
             base_url=base_url,
             custom_model=custom_model,
         )
@@ -530,8 +506,8 @@ def register_setup_routes(
                     base_url=base_url,
                     custom_model=custom_model,
                 )
-                result = deps.run_ollama_models_pull(
-                    base_url=base_url or deps.default_ollama_base_url,
+                result = ollama_setup_workbench.run_ollama_models_pull(
+                    base_url=base_url or ollama_core.DEFAULT_OLLAMA_BASE_URL,
                     models=models,
                 )
                 action_result = {
@@ -549,8 +525,8 @@ def register_setup_routes(
                 )
                 if not models:
                     raise ValueError("All recommended models are already installed.")
-                result = deps.run_ollama_models_pull(
-                    base_url=base_url or deps.default_ollama_base_url,
+                result = ollama_setup_workbench.run_ollama_models_pull(
+                    base_url=base_url or ollama_core.DEFAULT_OLLAMA_BASE_URL,
                     models=models,
                 )
                 action_result = {
@@ -566,8 +542,8 @@ def register_setup_routes(
                     base_url=base_url,
                     custom_model=custom_model,
                 )
-                result = deps.run_ollama_models_pull(
-                    base_url=base_url or deps.default_ollama_base_url,
+                result = ollama_setup_workbench.run_ollama_models_pull(
+                    base_url=base_url or ollama_core.DEFAULT_OLLAMA_BASE_URL,
                     models=models,
                 )
                 action_result = {
@@ -578,7 +554,7 @@ def register_setup_routes(
                     ],
                 }
             elif intent == "download_runtime":
-                install_result = deps.run_local_ollama_runtime_install()
+                install_result = ollama_setup_workbench.run_local_ollama_runtime_install()
                 action_result = {
                     "title": "Local Ollama runtime downloaded",
                     "details": [
@@ -587,8 +563,8 @@ def register_setup_routes(
                     ],
                 }
             elif intent == "restart_server":
-                restart_result = deps.run_ollama_server_restart(
-                    base_url=base_url or deps.default_ollama_base_url,
+                restart_result = ollama_setup_workbench.run_ollama_server_restart(
+                    base_url=base_url or ollama_core.DEFAULT_OLLAMA_BASE_URL,
                 )
                 action_result = {
                     "title": (

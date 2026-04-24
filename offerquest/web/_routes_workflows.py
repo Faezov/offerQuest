@@ -1,8 +1,9 @@
-from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
 from ..errors import OfferQuestError
+from ..workbench import documents as documents_workbench
+from ..workbench import jobs as jobs_workbench
 from ._support import (
     make_page_renderer,
     map_common_form_error,
@@ -11,40 +12,23 @@ from ._support import (
 )
 
 
-@dataclass(frozen=True)
-class WorkflowRouteDeps:
-    build_cover_letter_compare_view: Any
-    build_cover_letter_form_view: Any
-    build_latest_rankings_view: Any
-    build_rerank_jobs_form_view: Any
-    build_resume_tailored_draft_form_view: Any
-    build_resume_tailoring_form_view: Any
-    run_cover_letter_build: Any
-    run_cover_letter_compare: Any
-    run_rerank_jobs_build: Any
-    run_resume_tailored_draft_build: Any
-    run_resume_tailoring_plan_build: Any
-
-
 def register_workflow_routes(
     *,
     app: Any,
     render: Any,
     project_state: Any,
     HTMLResponse: Any,
-    get_deps: Any,
 ) -> None:
     from fastapi import Request
 
     @app.get("/rankings", response_class=HTMLResponse)
     async def rankings(request: Request) -> Any:
-        deps = get_deps()
         return render(
             request,
             "rankings.html",
             {
                 "page_title": "Latest Rankings",
-                "view": deps.build_latest_rankings_view(project_state),
+                "view": jobs_workbench.build_latest_rankings_view(project_state),
             },
         )
 
@@ -53,13 +37,12 @@ def register_workflow_routes(
         request: Request,
         ranking_file: str | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "rerank_jobs.html",
             {
                 "page_title": "Rerank Jobs",
-                "view": deps.build_rerank_jobs_form_view(
+                "view": jobs_workbench.build_rerank_jobs_form_view(
                     project_state,
                     ranking_file=ranking_file,
                 ),
@@ -72,13 +55,12 @@ def register_workflow_routes(
         ranking_file: str | None = None,
         job_id: str | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "tailor_cv.html",
             {
                 "page_title": "Tailor CV",
-                "view": deps.build_resume_tailoring_form_view(
+                "view": documents_workbench.build_resume_tailoring_form_view(
                     project_state,
                     ranking_file=ranking_file,
                     job_id=job_id,
@@ -92,13 +74,12 @@ def register_workflow_routes(
         ranking_file: str | None = None,
         job_id: str | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "tailor_cv_draft.html",
             {
                 "page_title": "Tailored CV Draft",
-                "view": deps.build_resume_tailored_draft_form_view(
+                "view": documents_workbench.build_resume_tailored_draft_form_view(
                     project_state,
                     ranking_file=ranking_file,
                     job_id=job_id,
@@ -113,13 +94,12 @@ def register_workflow_routes(
         job_id: str | None = None,
         mode: str | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "build_cover_letter.html",
             {
                 "page_title": "Generate Cover Letter",
-                "view": deps.build_cover_letter_form_view(
+                "view": documents_workbench.build_cover_letter_form_view(
                     project_state,
                     ranking_file=ranking_file,
                     job_id=job_id,
@@ -134,13 +114,12 @@ def register_workflow_routes(
         ranking_file: str | None = None,
         job_id: str | None = None,
     ) -> Any:
-        deps = get_deps()
         return render(
             request,
             "compare_cover_letters.html",
             {
                 "page_title": "Compare Drafts",
-                "view": deps.build_cover_letter_compare_view(
+                "view": documents_workbench.build_cover_letter_compare_view(
                     project_state,
                     ranking_file=ranking_file,
                     job_id=job_id,
@@ -157,14 +136,13 @@ def register_workflow_routes(
         jobs_file = str(form.get("jobs_file") or "").strip()
         top_n_raw = str(form.get("top_n") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="rerank_jobs.html",
             page_title="Rerank Jobs",
-            build_view=partial(deps.build_rerank_jobs_form_view, project_state),
+            build_view=partial(jobs_workbench.build_rerank_jobs_form_view, project_state),
             ranking_file=ranking_file,
             cv_path=cv_path or None,
             base_cover_letter_path=base_cover_letter_path,
@@ -203,7 +181,7 @@ def register_workflow_routes(
         assert top_n is not None
 
         try:
-            result = deps.run_rerank_jobs_build(
+            result = jobs_workbench.run_rerank_jobs_build(
                 project_state,
                 ranking_file=ranking_file,
                 cv_path=cv_path,
@@ -229,14 +207,13 @@ def register_workflow_routes(
         base_cover_letter_path = str(form.get("base_cover_letter_path") or "").strip() or None
         jobs_file = str(form.get("jobs_file") or "").strip()
         output_path = str(form.get("output_path") or "").strip()
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="tailor_cv.html",
             page_title="Tailor CV",
-            build_view=partial(deps.build_resume_tailoring_form_view, project_state),
+            build_view=partial(documents_workbench.build_resume_tailoring_form_view, project_state),
             ranking_file=ranking_file,
             job_id=job_id,
             cv_path=cv_path or None,
@@ -264,7 +241,7 @@ def register_workflow_routes(
             return validation_response
 
         try:
-            result = deps.run_resume_tailoring_plan_build(
+            result = documents_workbench.run_resume_tailoring_plan_build(
                 project_state,
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,
@@ -291,14 +268,13 @@ def register_workflow_routes(
         output_path = str(form.get("output_path") or "").strip()
         export_docx = bool(form.get("export_docx"))
         docx_output_path = str(form.get("docx_output_path") or "").strip() or None
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="tailor_cv_draft.html",
             page_title="Tailored CV Draft",
-            build_view=partial(deps.build_resume_tailored_draft_form_view, project_state),
+            build_view=partial(documents_workbench.build_resume_tailored_draft_form_view, project_state),
             ranking_file=ranking_file,
             job_id=job_id,
             cv_path=cv_path or None,
@@ -328,7 +304,7 @@ def register_workflow_routes(
             return validation_response
 
         try:
-            result = deps.run_resume_tailored_draft_build(
+            result = documents_workbench.run_resume_tailored_draft_build(
                 project_state,
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,
@@ -361,14 +337,13 @@ def register_workflow_routes(
         llm_model = str(form.get("llm_model") or "").strip() or None
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="build_cover_letter.html",
             page_title="Generate Cover Letter",
-            build_view=partial(deps.build_cover_letter_form_view, project_state),
+            build_view=partial(documents_workbench.build_cover_letter_form_view, project_state),
             ranking_file=ranking_file,
             job_id=job_id,
             draft_mode=draft_mode,
@@ -410,7 +385,7 @@ def register_workflow_routes(
             return numeric_response
 
         try:
-            result = deps.run_cover_letter_build(
+            result = documents_workbench.run_cover_letter_build(
                 project_state,
                 draft_mode=draft_mode or "rule_based",
                 cv_path=cv_path,
@@ -445,14 +420,13 @@ def register_workflow_routes(
         llm_model = str(form.get("llm_model") or "").strip() or None
         llm_base_url = str(form.get("llm_base_url") or "").strip() or None
         llm_timeout_seconds_raw = str(form.get("llm_timeout_seconds") or "").strip() or None
-        deps = get_deps()
 
         render_view = make_page_renderer(
             request,
             render,
             template_name="compare_cover_letters.html",
             page_title="Compare Drafts",
-            build_view=partial(deps.build_cover_letter_compare_view, project_state),
+            build_view=partial(documents_workbench.build_cover_letter_compare_view, project_state),
             ranking_file=ranking_file,
             job_id=job_id,
             cv_path=cv_path or None,
@@ -496,7 +470,7 @@ def register_workflow_routes(
             return numeric_response
 
         try:
-            result = deps.run_cover_letter_compare(
+            result = documents_workbench.run_cover_letter_compare(
                 project_state,
                 cv_path=cv_path,
                 base_cover_letter_path=base_cover_letter_path,

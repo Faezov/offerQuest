@@ -9,40 +9,10 @@ from typing import Any
 
 from .. import config as _config
 from ..errors import OfferQuestError
-from ..ollama import DEFAULT_OLLAMA_BASE_URL, RECOMMENDED_OLLAMA_MODELS
-from ..workbench import (
-    build_artifact_preview,
-    build_cover_letter_compare_view,
-    build_cover_letter_form_view,
-    build_dashboard_view,
-    build_job_sources_view,
-    build_latest_rankings_view,
-    build_ollama_setup_view,
-    build_profile_form_view,
-    build_rerank_jobs_form_view,
-    build_resume_tailored_draft_form_view,
-    build_resume_tailoring_form_view,
-    build_run_detail_view,
-    build_runs_view,
-    run_adzuna_credentials_save,
-    run_cover_letter_build,
-    run_cover_letter_compare,
-    run_job_source_delete,
-    run_job_source_save,
-    run_job_source_toggle,
-    run_local_ollama_runtime_install,
-    run_ollama_models_pull,
-    run_ollama_server_restart,
-    run_profile_build,
-    run_refresh_jobs_build,
-    run_rerank_jobs_build,
-    run_resume_tailored_draft_build,
-    run_resume_tailoring_plan_build,
-)
 from ..workspace import ProjectState
-from ._routes_overview import OverviewRouteDeps, register_overview_routes
-from ._routes_setup import SetupRouteDeps, register_setup_routes
-from ._routes_workflows import WorkflowRouteDeps, register_workflow_routes
+from ._routes_overview import register_overview_routes
+from ._routes_setup import register_setup_routes
+from ._routes_workflows import register_workflow_routes
 from ._support import (
     FieldErrors,
     OllamaJobStore,
@@ -169,47 +139,6 @@ def create_app(
             {**base_context, **context},
         )
 
-    def get_overview_route_deps() -> OverviewRouteDeps:
-        return OverviewRouteDeps(
-            build_artifact_preview=build_artifact_preview,
-            build_dashboard_view=build_dashboard_view,
-            build_run_detail_view=build_run_detail_view,
-            build_runs_view=build_runs_view,
-        )
-
-    def get_setup_route_deps() -> SetupRouteDeps:
-        return SetupRouteDeps(
-            build_job_sources_view=build_job_sources_view,
-            build_ollama_setup_view=build_ollama_setup_view,
-            build_profile_form_view=build_profile_form_view,
-            default_ollama_base_url=DEFAULT_OLLAMA_BASE_URL,
-            recommended_ollama_models=tuple(RECOMMENDED_OLLAMA_MODELS),
-            run_adzuna_credentials_save=run_adzuna_credentials_save,
-            run_job_source_delete=run_job_source_delete,
-            run_job_source_save=run_job_source_save,
-            run_job_source_toggle=run_job_source_toggle,
-            run_local_ollama_runtime_install=run_local_ollama_runtime_install,
-            run_ollama_models_pull=run_ollama_models_pull,
-            run_ollama_server_restart=run_ollama_server_restart,
-            run_profile_build=run_profile_build,
-            run_refresh_jobs_build=run_refresh_jobs_build,
-        )
-
-    def get_workflow_route_deps() -> WorkflowRouteDeps:
-        return WorkflowRouteDeps(
-            build_cover_letter_compare_view=build_cover_letter_compare_view,
-            build_cover_letter_form_view=build_cover_letter_form_view,
-            build_latest_rankings_view=build_latest_rankings_view,
-            build_rerank_jobs_form_view=build_rerank_jobs_form_view,
-            build_resume_tailored_draft_form_view=build_resume_tailored_draft_form_view,
-            build_resume_tailoring_form_view=build_resume_tailoring_form_view,
-            run_cover_letter_build=run_cover_letter_build,
-            run_cover_letter_compare=run_cover_letter_compare,
-            run_rerank_jobs_build=run_rerank_jobs_build,
-            run_resume_tailored_draft_build=run_resume_tailored_draft_build,
-            run_resume_tailoring_plan_build=run_resume_tailoring_plan_build,
-        )
-
     register_overview_routes(
         app=app,
         render=render,
@@ -218,7 +147,6 @@ def create_app(
         HTMLResponse=HTMLResponse,
         HTTPException=HTTPException,
         Response=Response,
-        get_deps=get_overview_route_deps,
     )
     register_setup_routes(
         app=app,
@@ -226,14 +154,12 @@ def create_app(
         project_state=project_state,
         HTMLResponse=HTMLResponse,
         JSONResponse=JSONResponse,
-        get_deps=get_setup_route_deps,
     )
     register_workflow_routes(
         app=app,
         render=render,
         project_state=project_state,
         HTMLResponse=HTMLResponse,
-        get_deps=get_workflow_route_deps,
     )
     return app
 

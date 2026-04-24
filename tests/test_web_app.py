@@ -16,8 +16,11 @@ from offerquest.web.app import (
     collect_required_field_errors,
     format_workbench_url,
     main,
+    make_page_renderer,
     map_job_source_exception_to_field_errors,
+    maybe_render_required_field_errors,
     normalize_progress,
+    parse_optional_positive_int_or_render,
     parse_port_argument,
     resolve_port,
     summarize_field_errors,
@@ -125,6 +128,104 @@ sys.modules["fastapi.testclient"] = testclient_module
 
 
 class WebAppTests(unittest.TestCase):
+    def test_make_page_renderer_merges_base_and_override_view_state(self) -> None:
+        build_view = Mock(return_value={"view_key": "view-value"})
+        render_page = Mock(return_value="rendered-response")
+
+        render_view = make_page_renderer(
+            "request-object",
+            render_page,
+            template_name="example.html",
+            page_title="Example Page",
+            build_view=build_view,
+            cv_path="data/cv.txt",
+            output_path=None,
+        )
+
+        response = render_view(output_path="outputs/profile.json", result={"status": "ok"})
+
+        self.assertEqual(response, "rendered-response")
+        self.assertEqual(
+            build_view.call_args.kwargs,
+            {
+                "cv_path": "data/cv.txt",
+                "output_path": "outputs/profile.json",
+                "result": {"status": "ok"},
+            },
+        )
+        self.assertEqual(
+            render_page.call_args.args,
+            (
+                "request-object",
+                "example.html",
+                {
+                    "page_title": "Example Page",
+                    "view": {"view_key": "view-value"},
+                },
+            ),
+        )
+
+    def test_maybe_render_required_field_errors_uses_renderer_for_missing_fields(self) -> None:
+        render_view = Mock(return_value="validation-response")
+
+        response = maybe_render_required_field_errors(
+            render_view,
+            {
+                "cv_path": "data/cv.txt",
+                "jobs_file": "",
+                "output_path": "",
+            },
+            required=[
+                ("cv_path", "CV file"),
+                ("jobs_file", "Jobs file"),
+                ("output_path", "Output path"),
+            ],
+            fallback="Please complete the required fields.",
+        )
+
+        self.assertEqual(response, "validation-response")
+        self.assertEqual(
+            render_view.call_args.kwargs,
+            {
+                "error": "Please complete the required fields.",
+                "field_errors": {
+                    "jobs_file": "Jobs file is required.",
+                    "output_path": "Output path is required.",
+                },
+            },
+        )
+
+    def test_parse_optional_positive_int_or_render_returns_value_or_rendered_error(self) -> None:
+        render_view = Mock(return_value="numeric-error-response")
+
+        value, response = parse_optional_positive_int_or_render(
+            render_view,
+            field_name="top_n",
+            raw_value="10",
+            invalid_message="Top count must be a whole number.",
+            minimum_message="Top count must be at least 1.",
+        )
+
+        self.assertEqual((value, response), (10, None))
+        self.assertFalse(render_view.called)
+
+        value, response = parse_optional_positive_int_or_render(
+            render_view,
+            field_name="top_n",
+            raw_value="0",
+            invalid_message="Top count must be a whole number.",
+            minimum_message="Top count must be at least 1.",
+        )
+
+        self.assertEqual((value, response), (None, "numeric-error-response"))
+        self.assertEqual(
+            render_view.call_args.kwargs,
+            {
+                "error": "Top count must be at least 1.",
+                "field_errors": {"top_n": "Top count must be at least 1."},
+            },
+        )
+
     def test_parse_port_argument_accepts_auto(self) -> None:
         self.assertEqual(parse_port_argument("auto"), AUTO_PORT)
 

@@ -361,7 +361,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.web.app.build_dashboard_view",
+                "offerquest.workbench.runs.build_dashboard_view",
                 return_value={
                     "stats": {"run_count": 0, "artifact_count": 0, "workflow_count": 0},
                     "workflow_counts": [],
@@ -409,7 +409,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.web.app.build_ollama_setup_view",
+                "offerquest.workbench.ollama_setup.build_ollama_setup_view",
                 return_value={
                     "selected_base_url": "http://localhost:11434",
                     "custom_model": "",
@@ -469,7 +469,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.web.app.build_ollama_setup_view",
+                "offerquest.workbench.ollama_setup.build_ollama_setup_view",
                 return_value={
                     "selected_base_url": "http://localhost:11434",
                     "custom_model": "",
@@ -560,11 +560,11 @@ class WebAppTests(unittest.TestCase):
             }
 
             with patch(
-                "offerquest.web.app.run_ollama_models_pull",
+                "offerquest.workbench.ollama_setup.run_ollama_models_pull",
                 return_value=pull_result,
             ) as pull_mock:
                 with patch(
-                    "offerquest.web.app.build_ollama_setup_view",
+                    "offerquest.workbench.ollama_setup.build_ollama_setup_view",
                     return_value=response_view,
                 ):
                     response = client.post(
@@ -630,14 +630,14 @@ class WebAppTests(unittest.TestCase):
             }
 
             with patch(
-                "offerquest.web.app.run_local_ollama_runtime_install",
+                "offerquest.workbench.ollama_setup.run_local_ollama_runtime_install",
                 return_value={
                     "command_source": "repo_local_wrapper",
                     "local_runtime_path": "/tmp/ollama",
                 },
             ) as install_mock:
                 with patch(
-                    "offerquest.web.app.build_ollama_setup_view",
+                    "offerquest.workbench.ollama_setup.build_ollama_setup_view",
                     return_value=response_view,
                 ):
                     response = client.post(
@@ -703,7 +703,7 @@ class WebAppTests(unittest.TestCase):
             }
 
             with patch(
-                "offerquest.web.app.run_ollama_server_restart",
+                "offerquest.workbench.ollama_setup.run_ollama_server_restart",
                 return_value={
                     "base_url": "http://localhost:11434",
                     "pid": 4321,
@@ -711,7 +711,7 @@ class WebAppTests(unittest.TestCase):
                 },
             ) as restart_mock:
                 with patch(
-                    "offerquest.web.app.build_ollama_setup_view",
+                    "offerquest.workbench.ollama_setup.build_ollama_setup_view",
                     return_value=response_view,
                 ):
                     response = client.post(
@@ -740,7 +740,7 @@ class WebAppTests(unittest.TestCase):
             client = TestClient(app)
 
             with patch(
-                "offerquest.web.app.build_dashboard_view",
+                "offerquest.workbench.runs.build_dashboard_view",
                 return_value={
                     "stats": {"run_count": 0, "artifact_count": 0, "workflow_count": 0},
                     "workflow_counts": [],
@@ -986,7 +986,7 @@ class WebAppTests(unittest.TestCase):
             )
 
             with patch(
-                "offerquest.web.app.run_refresh_jobs_build",
+                "offerquest.workbench.job_sources.run_refresh_jobs_build",
                 return_value=refresh_result,
             ) as refresh_mock:
                 response = client.post(
@@ -1026,7 +1026,7 @@ class WebAppTests(unittest.TestCase):
             )
 
             with patch(
-                "offerquest.web.app.run_job_source_save",
+                "offerquest.workbench.job_sources.run_job_source_save",
                 return_value=save_result,
             ) as save_mock:
                 response = client.post(

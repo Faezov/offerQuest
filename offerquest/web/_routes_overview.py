@@ -1,13 +1,6 @@
-from dataclasses import dataclass
 from typing import Any
 
-
-@dataclass(frozen=True)
-class OverviewRouteDeps:
-    build_artifact_preview: Any
-    build_dashboard_view: Any
-    build_run_detail_view: Any
-    build_runs_view: Any
+from ..workbench import runs as runs_workbench
 
 
 def register_overview_routes(
@@ -19,19 +12,17 @@ def register_overview_routes(
     HTMLResponse: Any,
     HTTPException: Any,
     Response: Any,
-    get_deps: Any,
 ) -> None:
     from fastapi import Request
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> Any:
-        deps = get_deps()
         return render(
             request,
             "dashboard.html",
             {
                 "page_title": "Workbench",
-                "view": deps.build_dashboard_view(project_state),
+                "view": runs_workbench.build_dashboard_view(project_state),
             },
         )
 
@@ -41,20 +32,18 @@ def register_overview_routes(
 
     @app.get("/runs", response_class=HTMLResponse)
     async def runs(request: Request) -> Any:
-        deps = get_deps()
         return render(
             request,
             "runs.html",
             {
                 "page_title": "Runs",
-                "view": deps.build_runs_view(project_state),
+                "view": runs_workbench.build_runs_view(project_state),
             },
         )
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     async def run_detail(request: Request, run_id: str) -> Any:
-        deps = get_deps()
-        detail = deps.build_run_detail_view(project_state, run_id)
+        detail = runs_workbench.build_run_detail_view(project_state, run_id)
         if detail is None:
             raise HTTPException(status_code=404, detail="Run not found")
         return render(
@@ -68,8 +57,7 @@ def register_overview_routes(
 
     @app.get("/runs/{run_id}/artifacts/{artifact_index}", response_class=HTMLResponse)
     async def artifact_preview(request: Request, run_id: str, artifact_index: int) -> Any:
-        deps = get_deps()
-        preview = deps.build_artifact_preview(project_state, run_id, artifact_index)
+        preview = runs_workbench.build_artifact_preview(project_state, run_id, artifact_index)
         if preview is None:
             raise HTTPException(status_code=404, detail="Artifact not found")
         return render(

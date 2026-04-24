@@ -35,29 +35,31 @@ from .profile import (
     build_profile_form_view,
     run_profile_build,
 )
+from .job_sources import (
+    JOB_SOURCE_TYPES,
+    BuildRefreshJobsResult,
+    SaveAdzunaCredentialsResult,
+    SaveJobSourceConfigResult,
+    build_job_sources_view,
+    run_adzuna_credentials_save,
+    run_job_source_delete,
+    run_job_source_save,
+    run_job_source_toggle,
+    run_refresh_jobs_build,
+)
+from .ollama_setup import (
+    PullOllamaModelsResult,
+    build_ollama_setup_view,
+    run_local_ollama_runtime_install,
+    run_ollama_models_pull,
+    run_ollama_server_restart,
+)
 from .runs import (
     ArtifactPreview,
     build_artifact_preview,
     build_dashboard_view,
     build_run_detail_view,
     build_runs_view,
-)
-from .setup import (
-    JOB_SOURCE_TYPES,
-    BuildRefreshJobsResult,
-    PullOllamaModelsResult,
-    SaveAdzunaCredentialsResult,
-    SaveJobSourceConfigResult,
-    build_job_sources_view,
-    build_ollama_setup_view,
-    run_adzuna_credentials_save,
-    run_job_source_delete,
-    run_job_source_save,
-    run_job_source_toggle,
-    run_local_ollama_runtime_install,
-    run_ollama_models_pull,
-    run_ollama_server_restart,
-    run_refresh_jobs_build,
 )
 
 __all__ = [

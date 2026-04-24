@@ -225,7 +225,7 @@ class WorkbenchTests(unittest.TestCase):
             state = ProjectState.from_root(tmpdir)
 
             with patch(
-                "offerquest.workbench.setup.get_ollama_status",
+                "offerquest.workbench.ollama_setup.get_ollama_status",
                 return_value={
                     "reachable": True,
                     "command_available": True,
@@ -236,11 +236,11 @@ class WorkbenchTests(unittest.TestCase):
                 },
             ):
                 with patch(
-                    "offerquest.workbench.setup.detect_gpu_environment",
+                    "offerquest.workbench.ollama_setup.detect_gpu_environment",
                     return_value={"summary": "NVIDIA GPU detected.", "detail": "Ready", "devices": []},
                 ):
                     with patch(
-                        "offerquest.workbench.setup.get_managed_ollama_server_state",
+                        "offerquest.workbench.ollama_setup.get_managed_ollama_server_state",
                         return_value={"running": False, "pid": None, "log_path": "log", "pid_path": "pid"},
                     ):
                         view = build_ollama_setup_view(state)
@@ -251,7 +251,7 @@ class WorkbenchTests(unittest.TestCase):
 
     def test_run_ollama_models_pull_uses_streaming_api_and_refreshes_status(self) -> None:
         with patch(
-            "offerquest.workbench.setup.get_ollama_status",
+            "offerquest.workbench.ollama_setup.get_ollama_status",
             side_effect=[
                 {
                     "reachable": True,
@@ -294,7 +294,7 @@ class WorkbenchTests(unittest.TestCase):
                     }
                 )
 
-            with patch("offerquest.workbench.setup.pull_ollama_model", side_effect=fake_pull_ollama_model) as pull_mock:
+            with patch("offerquest.workbench.ollama_setup.pull_ollama_model", side_effect=fake_pull_ollama_model) as pull_mock:
                 result = run_ollama_models_pull(
                     base_url="http://localhost:11434",
                     models=["qwen3:8b"],
@@ -464,7 +464,7 @@ class WorkbenchTests(unittest.TestCase):
 
             state = ProjectState.from_root(root)
             with patch(
-                "offerquest.workbench.setup.refresh_job_sources",
+                "offerquest.workbench.job_sources.refresh_job_sources",
                 return_value=refresh_summary,
             ) as refresh_mock:
                 result = run_refresh_jobs_build(

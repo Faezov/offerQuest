@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -36,8 +34,10 @@ def register_workflow_routes(
     HTMLResponse: Any,
     get_deps: Any,
 ) -> None:
+    from fastapi import Request
+
     @app.get("/rankings", response_class=HTMLResponse)
-    async def rankings(request: Any) -> Any:
+    async def rankings(request: Request) -> Any:
         deps = get_deps()
         return render(
             request,
@@ -50,7 +50,7 @@ def register_workflow_routes(
 
     @app.get("/rerank-jobs/new", response_class=HTMLResponse)
     async def build_rerank_jobs_page(
-        request: Any,
+        request: Request,
         ranking_file: str | None = None,
     ) -> Any:
         deps = get_deps()
@@ -68,7 +68,7 @@ def register_workflow_routes(
 
     @app.get("/cv-tailoring/new", response_class=HTMLResponse)
     async def build_resume_tailoring_page(
-        request: Any,
+        request: Request,
         ranking_file: str | None = None,
         job_id: str | None = None,
     ) -> Any:
@@ -88,7 +88,7 @@ def register_workflow_routes(
 
     @app.get("/cv-tailoring/draft/new", response_class=HTMLResponse)
     async def build_resume_tailored_draft_page(
-        request: Any,
+        request: Request,
         ranking_file: str | None = None,
         job_id: str | None = None,
     ) -> Any:
@@ -108,7 +108,7 @@ def register_workflow_routes(
 
     @app.get("/cover-letters/new", response_class=HTMLResponse)
     async def build_cover_letter_page(
-        request: Any,
+        request: Request,
         ranking_file: str | None = None,
         job_id: str | None = None,
         mode: str | None = None,
@@ -130,7 +130,7 @@ def register_workflow_routes(
 
     @app.get("/cover-letters/compare", response_class=HTMLResponse)
     async def compare_cover_letters_page(
-        request: Any,
+        request: Request,
         ranking_file: str | None = None,
         job_id: str | None = None,
     ) -> Any:
@@ -149,7 +149,7 @@ def register_workflow_routes(
         )
 
     @app.post("/rerank-jobs/new", response_class=HTMLResponse)
-    async def build_rerank_jobs_submit(request: Any) -> Any:
+    async def build_rerank_jobs_submit(request: Request) -> Any:
         form = await request.form()
         ranking_file = str(form.get("ranking_file") or "").strip() or None
         cv_path = str(form.get("cv_path") or "").strip()
@@ -221,7 +221,7 @@ def register_workflow_routes(
         return render_view(result=result)
 
     @app.post("/cv-tailoring/new", response_class=HTMLResponse)
-    async def build_resume_tailoring_submit(request: Any) -> Any:
+    async def build_resume_tailoring_submit(request: Request) -> Any:
         form = await request.form()
         ranking_file = str(form.get("ranking_file") or "").strip() or None
         job_id = str(form.get("job_id") or "").strip() or None
@@ -281,7 +281,7 @@ def register_workflow_routes(
         return render_view(result=result)
 
     @app.post("/cv-tailoring/draft/new", response_class=HTMLResponse)
-    async def build_resume_tailored_draft_submit(request: Any) -> Any:
+    async def build_resume_tailored_draft_submit(request: Request) -> Any:
         form = await request.form()
         ranking_file = str(form.get("ranking_file") or "").strip() or None
         job_id = str(form.get("job_id") or "").strip() or None
@@ -349,7 +349,7 @@ def register_workflow_routes(
         return render_view(result=result)
 
     @app.post("/cover-letters/new", response_class=HTMLResponse)
-    async def build_cover_letter_submit(request: Any) -> Any:
+    async def build_cover_letter_submit(request: Request) -> Any:
         form = await request.form()
         ranking_file = str(form.get("ranking_file") or "").strip() or None
         job_id = str(form.get("job_id") or "").strip() or None
@@ -433,7 +433,7 @@ def register_workflow_routes(
         return render_view(result=result)
 
     @app.post("/cover-letters/compare", response_class=HTMLResponse)
-    async def compare_cover_letters_submit(request: Any) -> Any:
+    async def compare_cover_letters_submit(request: Request) -> Any:
         form = await request.form()
         ranking_file = str(form.get("ranking_file") or "").strip() or None
         job_id = str(form.get("job_id") or "").strip() or None

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import threading
 from dataclasses import dataclass, replace
@@ -48,6 +46,8 @@ def register_setup_routes(
     JSONResponse: Any,
     get_deps: Any,
 ) -> None:
+    from fastapi import Request
+
     def resolve_ollama_action_models(
         *,
         intent: str,
@@ -192,7 +192,7 @@ def register_setup_routes(
 
     @app.get("/job-sources", response_class=HTMLResponse)
     async def job_sources(
-        request: Any,
+        request: Request,
         edit_source: int | None = None,
         duplicate_source: int | None = None,
     ) -> Any:
@@ -212,7 +212,7 @@ def register_setup_routes(
 
     @app.get("/ollama", response_class=HTMLResponse)
     async def ollama_setup(
-        request: Any,
+        request: Request,
         base_url: str | None = None,
     ) -> Any:
         deps = get_deps()
@@ -229,7 +229,7 @@ def register_setup_routes(
         )
 
     @app.post("/ollama/jobs")
-    async def ollama_setup_job_submit(request: Any) -> Any:
+    async def ollama_setup_job_submit(request: Request) -> Any:
         form = await request.form()
         intent = str(form.get("intent") or "refresh_status").strip()
         base_url = str(form.get("base_url") or "").strip()
@@ -282,7 +282,7 @@ def register_setup_routes(
         return JSONResponse(job)
 
     @app.get("/build-profile", response_class=HTMLResponse)
-    async def build_profile_page(request: Any) -> Any:
+    async def build_profile_page(request: Request) -> Any:
         deps = get_deps()
         return render(
             request,
@@ -294,7 +294,7 @@ def register_setup_routes(
         )
 
     @app.post("/build-profile", response_class=HTMLResponse)
-    async def build_profile_submit(request: Any) -> Any:
+    async def build_profile_submit(request: Request) -> Any:
         form = await request.form()
         cv_path = str(form.get("cv_path") or "").strip()
         cover_letter_path = str(form.get("cover_letter_path") or "").strip()
@@ -344,7 +344,7 @@ def register_setup_routes(
         return render_view(result=result)
 
     @app.post("/job-sources", response_class=HTMLResponse)
-    async def job_sources_submit(request: Any) -> Any:
+    async def job_sources_submit(request: Request) -> Any:
         form = await request.form()
         intent = str(form.get("intent") or "save_credentials").strip()
         app_id = str(form.get("app_id") or "").strip()
@@ -501,7 +501,7 @@ def register_setup_routes(
         return render_view(credentials_result=credentials_result)
 
     @app.post("/ollama", response_class=HTMLResponse)
-    async def ollama_setup_submit(request: Any) -> Any:
+    async def ollama_setup_submit(request: Request) -> Any:
         form = await request.form()
         intent = str(form.get("intent") or "refresh_status").strip()
         base_url = str(form.get("base_url") or "").strip() or None

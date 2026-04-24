@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,8 +21,10 @@ def register_overview_routes(
     Response: Any,
     get_deps: Any,
 ) -> None:
+    from fastapi import Request
+
     @app.get("/", response_class=HTMLResponse)
-    async def dashboard(request: Any) -> Any:
+    async def dashboard(request: Request) -> Any:
         deps = get_deps()
         return render(
             request,
@@ -40,7 +40,7 @@ def register_overview_routes(
         return Response(content=favicon_svg, media_type="image/svg+xml")
 
     @app.get("/runs", response_class=HTMLResponse)
-    async def runs(request: Any) -> Any:
+    async def runs(request: Request) -> Any:
         deps = get_deps()
         return render(
             request,
@@ -52,7 +52,7 @@ def register_overview_routes(
         )
 
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
-    async def run_detail(request: Any, run_id: str) -> Any:
+    async def run_detail(request: Request, run_id: str) -> Any:
         deps = get_deps()
         detail = deps.build_run_detail_view(project_state, run_id)
         if detail is None:
@@ -67,7 +67,7 @@ def register_overview_routes(
         )
 
     @app.get("/runs/{run_id}/artifacts/{artifact_index}", response_class=HTMLResponse)
-    async def artifact_preview(request: Any, run_id: str, artifact_index: int) -> Any:
+    async def artifact_preview(request: Request, run_id: str, artifact_index: int) -> Any:
         deps = get_deps()
         preview = deps.build_artifact_preview(project_state, run_id, artifact_index)
         if preview is None:

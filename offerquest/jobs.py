@@ -10,7 +10,6 @@ import re
 import tempfile
 import time
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -19,6 +18,7 @@ from urllib.request import Request, urlopen
 from .errors import JobSourceError
 from .extractors import normalize_text, read_document_text
 from .types import JobRecord
+from .workspace import now_iso, relative_to_root, slugify
 
 ADZUNA_ENV_PATH_ENVVAR = "OFFERQUEST_ADZUNA_ENV_FILE"
 ADZUNA_ENV_FILENAME = "adzuna.env"
@@ -209,7 +209,7 @@ def refresh_job_sources(
         if not source_type or not source_name:
             raise JobSourceError("Each enabled job source needs both `type` and `name`.")
 
-        output_name = str(source.get("output") or f"{slugify(source_name)}.jsonl").strip()
+        output_name = str(source.get("output") or f"{slugify(source_name, fallback='jobs')}.jsonl").strip()
         if not output_name:
             raise JobSourceError(f"Job source `{source_name}` is missing an output filename.")
         output_path = output_root / output_name
@@ -780,10 +780,6 @@ def looks_like_header_location_candidate(value: str) -> bool:
     return True
 
 
-def now_iso() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def value_at(payload: dict[str, Any], *keys: str) -> Any:
     current: Any = payload
     for key in keys:
@@ -966,19 +962,6 @@ def resolve_refresh_input_path(output_root: Path, raw_path: str | Path) -> Path:
     if path.is_absolute():
         return path.resolve()
     return (output_root / path).resolve()
-
-
-def relative_to_root(path: Path, root: Path) -> Path:
-    try:
-        return path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return path.resolve()
-
-
-def slugify(value: str) -> str:
-    lowered = value.lower()
-    lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
-    return lowered.strip("-") or "jobs"
 
 
 def resolve_adzuna_credentials(

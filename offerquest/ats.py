@@ -11,11 +11,6 @@ from .scoring import infer_job_title, score_job_text, score_title_alignment
 from .types import ATSReport
 
 
-def _ats_patterns() -> dict[str, list[str]]:
-    cfg = _config.active()
-    return {**cfg.skill_patterns, **cfg.domain_patterns, **cfg.ats_extra_patterns}
-
-
 def ats_check_job_file(
     cv_path: str | Path,
     job_path: str | Path,
@@ -150,7 +145,8 @@ def analyze_keyword_coverage(cv_text: str, job_text: str, *, job_title: str) -> 
     lines = [line.strip().lower() for line in job_text.splitlines() if line.strip()]
 
     entries: list[dict] = []
-    for label, patterns in _ats_patterns().items():
+    patterns_by_label = {**cfg.skill_patterns, **cfg.domain_patterns, **cfg.ats_extra_patterns}
+    for label, patterns in patterns_by_label.items():
         if not contains_any_keyword(job_text, patterns):
             continue
 

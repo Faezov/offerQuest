@@ -417,8 +417,7 @@ def _cmd_build_profile(args: argparse.Namespace, parser: argparse.ArgumentParser
 def _cmd_export_docx(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     project_state = ProjectState.from_root(Path.cwd())
     export_document_as_docx(args.input, args.output)
-    record_run(
-        project_state,
+    project_state.record_run(
         "export-docx",
         artifacts=[{"kind": "document", "path": args.output}],
         metadata={"source": str(args.input)},
@@ -444,8 +443,7 @@ def _cmd_generate_cover_letter(args: argparse.Namespace, parser: argparse.Argume
         )
 
     write_cover_letter(args.output, payload)
-    record_run(
-        project_state,
+    project_state.record_run(
         "generate-cover-letter",
         artifacts=[{"kind": "cover_letter", "path": args.output}],
         metadata={
@@ -482,8 +480,7 @@ def _cmd_generate_cover_letter_llm(args: argparse.Namespace, parser: argparse.Ar
         timeout_seconds=args.timeout_seconds,
     )
     write_cover_letter(args.output, payload)
-    record_run(
-        project_state,
+    project_state.record_run(
         "generate-cover-letter-llm",
         artifacts=[{"kind": "llm_cover_letter", "path": args.output}],
         metadata={
@@ -519,8 +516,7 @@ def _cmd_generate_cover_letters(args: argparse.Namespace, parser: argparse.Argum
         top_n=args.top,
         export_docx=args.docx,
     )
-    record_run(
-        project_state,
+    project_state.record_run(
         "generate-cover-letters",
         artifacts=[{"kind": "cover_letter_batch", "path": Path(args.output_dir) / "summary.json"}],
         metadata={"output_dir": str(args.output_dir), "job_count": summary.get("job_count")},
@@ -545,8 +541,7 @@ def _cmd_generate_cover_letters_llm(args: argparse.Namespace, parser: argparse.A
         base_url=args.base_url,
         timeout_seconds=args.timeout_seconds,
     )
-    record_run(
-        project_state,
+    project_state.record_run(
         "generate-cover-letters-llm",
         artifacts=[{"kind": "llm_cover_letter_batch", "path": Path(args.output_dir) / "summary.json"}],
         metadata={
@@ -603,8 +598,7 @@ def _cmd_fetch_adzuna(args: argparse.Namespace, parser: argparse.ArgumentParser)
         results_per_page=args.results_per_page,
     )
     write_job_records(args.output, jobs)
-    record_run(
-        project_state,
+    project_state.record_run(
         "fetch-adzuna",
         artifacts=[{"kind": "jobs_file", "path": args.output}],
         metadata={"source": "adzuna", "job_count": len(jobs)},
@@ -638,8 +632,7 @@ def _cmd_refresh_jobs(args: argparse.Namespace, parser: argparse.ArgumentParser)
     if summary.get("merged_output"):
         artifacts.append({"kind": "jobs_file", "path": Path(summary["merged_output"])})
 
-    record_run(
-        project_state,
+    project_state.record_run(
         "refresh-jobs",
         artifacts=artifacts,
         metadata={
@@ -657,8 +650,7 @@ def _cmd_fetch_greenhouse(args: argparse.Namespace, parser: argparse.ArgumentPar
     project_state = ProjectState.from_root(Path.cwd())
     jobs = fetch_greenhouse_jobs(args.board_token)
     write_job_records(args.output, jobs)
-    record_run(
-        project_state,
+    project_state.record_run(
         "fetch-greenhouse",
         artifacts=[{"kind": "jobs_file", "path": args.output}],
         metadata={"source": "greenhouse", "job_count": len(jobs), "board_token": args.board_token},
@@ -682,8 +674,7 @@ def _cmd_import_manual_jobs(args: argparse.Namespace, parser: argparse.ArgumentP
     project_state = ProjectState.from_root(Path.cwd())
     jobs = import_manual_jobs(args.input_path)
     write_job_records(args.output, jobs)
-    record_run(
-        project_state,
+    project_state.record_run(
         "import-manual-jobs",
         artifacts=[{"kind": "jobs_file", "path": args.output}],
         metadata={"source": "manual", "job_count": len(jobs), "input_path": str(args.input_path)},
@@ -702,8 +693,7 @@ def _cmd_merge_jobs(args: argparse.Namespace, parser: argparse.ArgumentParser) -
     project_state = ProjectState.from_root(Path.cwd())
     jobs = collect_job_record_inputs(args.inputs)
     write_job_records(args.output, jobs)
-    record_run(
-        project_state,
+    project_state.record_run(
         "merge-jobs",
         artifacts=[{"kind": "jobs_file", "path": args.output}],
         metadata={"source": "merged", "job_count": len(jobs)},
@@ -932,8 +922,7 @@ def maybe_record_run(
 ) -> None:
     if output_path is None:
         return
-    record_run(
-        project_state,
+    project_state.record_run(
         workflow,
         artifacts=[{"kind": artifact_kind, "path": output_path}],
         metadata=metadata,
@@ -949,22 +938,6 @@ def resolve_job_record(args: argparse.Namespace, parser: argparse.ArgumentParser
     if job_record is None:
         parser.error(f"Job id not found in {args.jobs_file}: {args.job_id}")
     return job_record
-
-
-def record_run(
-    project_state: ProjectState,
-    workflow: str,
-    *,
-    artifacts: list[dict[str, object]],
-    metadata: dict[str, object] | None = None,
-    label: str | None = None,
-) -> None:
-    project_state.record_run(
-        workflow,
-        artifacts=artifacts,
-        metadata=metadata,
-        label=label,
-    )
 
 
 def format_workspace_init_result(result: WorkspaceInitResult) -> str:

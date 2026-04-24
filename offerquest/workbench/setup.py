@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..cover_letter import slugify
 from ..jobs import (
     load_adzuna_credentials_status,
     refresh_job_sources,
@@ -23,11 +22,11 @@ from ..ollama import (
     get_ollama_status,
     has_local_ollama_installer,
     has_local_ollama_runtime,
-    install_local_ollama_runtime,
+    install_local_ollama_runtime as run_local_ollama_runtime_install,
     pull_ollama_model,
-    restart_managed_ollama_server,
+    restart_managed_ollama_server as run_ollama_server_restart,
 )
-from ..workspace import ProjectState, relative_to_root, write_json_atomic
+from ..workspace import ProjectState, relative_to_root, slugify, write_json_atomic
 from ._util import (
     format_user_path,
     normalize_boolean_toggle,
@@ -367,17 +366,6 @@ def format_progress_bytes(size: int) -> str:
             return f"{size:.0f} {unit}"
         size = int(size / 1024)
     return f"{size:.0f} TB"
-
-
-def run_local_ollama_runtime_install(
-    *,
-    progress_callback: Callable[[dict[str, Any]], None] | None = None,
-) -> dict[str, Any]:
-    return install_local_ollama_runtime(progress_callback=progress_callback)
-
-
-def run_ollama_server_restart(*, base_url: str) -> dict[str, Any]:
-    return restart_managed_ollama_server(base_url=base_url)
 
 
 def run_job_source_save(

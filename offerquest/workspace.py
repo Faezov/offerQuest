@@ -264,7 +264,7 @@ def summarize_run(manifest: dict[str, Any]) -> dict[str, Any]:
 
 def build_run_id(workflow: str, *, created_at: str, label: str | None = None) -> str:
     timestamp = created_at.replace("-", "").replace(":", "").replace("T", "-").replace("Z", "")
-    suffix = slugify(label or workflow)
+    suffix = slugify(label or workflow, fallback="run")
     return f"{timestamp}-{suffix}"
 
 
@@ -275,10 +275,10 @@ def relative_to_root(path: Path, root: Path) -> Path:
         return path.resolve()
 
 
-def slugify(value: str) -> str:
+def slugify(value: str, *, fallback: str = "item") -> str:
     lowered = value.lower()
     lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
-    return lowered.strip("-") or "run"
+    return lowered.strip("-") or fallback
 
 
 def now_iso() -> str:

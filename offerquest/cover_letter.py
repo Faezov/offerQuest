@@ -13,6 +13,7 @@ from .jobs import index_job_records, job_record_to_text, read_job_records
 from .ollama import DEFAULT_OLLAMA_BASE_URL, generate_structured_response
 from .profile import build_candidate_profile, looks_like_location_line
 from .scoring import infer_job_title
+from .workspace import slugify
 
 
 def _load_cover_letter_inputs(
@@ -637,12 +638,6 @@ def build_cover_letter_filename(index: int, payload: dict) -> str:
     company = slugify(payload.get("company") or "unknown-company")
     title = slugify(payload.get("job_title") or "job")
     return f"{index:02d}-{company}-{title}"
-
-
-def slugify(value: str) -> str:
-    lowered = value.lower()
-    lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
-    return lowered.strip("-") or "item"
 
 
 def ensure_string_list(value: Any) -> list[str]:

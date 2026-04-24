@@ -5,9 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..cover_letter import slugify
 from ..jobs import read_job_records
-from ..workspace import ProjectState, relative_to_root
+from ..workspace import ProjectState, relative_to_root, slugify
 
 TEXT_PREVIEW_SUFFIXES = {".txt", ".md", ".json", ".jsonl", ".log"}
 PROFILE_SOURCE_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
@@ -98,7 +97,7 @@ def list_job_record_files(project_state: ProjectState) -> list[dict[str, Any]]:
 
         try:
             records = read_job_records(path)
-        except Exception:
+        except (OSError, ValueError, json.JSONDecodeError):
             continue
 
         if not records:

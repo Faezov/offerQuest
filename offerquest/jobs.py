@@ -12,7 +12,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from .errors import JobSourceError
@@ -24,6 +24,18 @@ ADZUNA_ENV_PATH_ENVVAR = "OFFERQUEST_ADZUNA_ENV_FILE"
 ADZUNA_ENV_FILENAME = "adzuna.env"
 SUPPORTED_MANUAL_JOB_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".odt"}
 SUPPORTED_JOB_RECORD_SUFFIXES = {".json", ".jsonl"}
+SENSITIVE_QUERY_PARAMETERS = frozenset(
+    {
+        "app_key",
+        "api_key",
+        "access_key",
+        "access_token",
+        "key",
+        "password",
+        "secret",
+        "token",
+    }
+)
 logger = logging.getLogger(__name__)
 HEADER_LOCATION_ORG_MARKERS = frozenset(
     {
@@ -187,7 +199,12 @@ def refresh_job_sources(
         raise JobSourceError("Job refresh config must contain a `sources` list.")
 
     output_root = (
-        resolve_workspace_path(root, output_dir)
+        resolve_workspace_path(
+            root,
+            output_dir,
+            must_stay_inside=True,
+            label="Job refresh output directory",
+        )
         if output_dir is not None
         else root / "outputs" / "jobs"
     )
@@ -212,7 +229,11 @@ def refresh_job_sources(
         output_name = str(source.get("output") or f"{slugify(source_name, fallback='jobs')}.jsonl").strip()
         if not output_name:
             raise JobSourceError(f"Job source `{source_name}` is missing an output filename.")
-        output_path = output_root / output_name
+        output_path = resolve_refresh_output_path(
+            output_root,
+            output_name,
+            label=f"Output path for job source `{source_name}`",
+        )
         logger.info("Refreshing source %s (%s)", source_name, source_type)
 
         if source_type == "adzuna":
@@ -288,7 +309,11 @@ def refresh_job_sources(
         merged_output_name = str(merge_config.get("output") or "all.jsonl").strip()
         if not merged_output_name:
             raise JobSourceError("Job refresh config merge output cannot be empty.")
-        merged_output_path = output_root / merged_output_name
+        merged_output_path = resolve_refresh_output_path(
+            output_root,
+            merged_output_name,
+            label="Job refresh merge output path",
+        )
         write_job_records(merged_output_path, merged_records)
         merged_job_count = len(merged_records)
         logger.info("Merged %s job records into %s", merged_job_count, merged_output_path)
@@ -296,7 +321,11 @@ def refresh_job_sources(
     summary_output_name = str(config.get("summary_output") or "refresh-summary.json").strip()
     if not summary_output_name:
         raise JobSourceError("Job refresh config summary output cannot be empty.")
-    summary_path = output_root / summary_output_name
+    summary_path = resolve_refresh_output_path(
+        output_root,
+        summary_output_name,
+        label="Job refresh summary output path",
+    )
 
     summary = {
         "refreshed_at": now_iso(),
@@ -313,6 +342,7 @@ def refresh_job_sources(
         "merged_job_count": merged_job_count if merge_enabled else None,
         "summary_output": str(relative_to_root(summary_path, root)),
     }
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     logger.info("Wrote job refresh summary to %s", summary_path)
     return summary
@@ -326,6 +356,7 @@ def fetch_json(url: str, *, timeout: int = 30, retries: int = 3) -> dict[str, An
             "User-Agent": "OfferQuest/0.1.0",
         },
     )
+    redacted_url = redact_url_for_logs(url)
     last_error: Exception
     for attempt in range(retries):
         if attempt:
@@ -336,8 +367,31 @@ def fetch_json(url: str, *, timeout: int = 30, retries: int = 3) -> dict[str, An
             return json.loads(body)
         except Exception as exc:
             last_error = exc
-            logger.warning("Request to %s failed on attempt %s/%s: %s", url, attempt + 1, retries, exc)
-    raise JobSourceError(f"Failed to fetch JSON from {url}") from last_error
+            logger.warning(
+                "Request to %s failed on attempt %s/%s: %s",
+                redacted_url,
+                attempt + 1,
+                retries,
+                exc,
+            )
+    raise JobSourceError(f"Failed to fetch JSON from {redacted_url}") from last_error
+
+
+def redact_url_for_logs(url: str) -> str:
+    parsed = urlsplit(url)
+    if not parsed.query:
+        return url
+
+    query = urlencode(
+        [
+            (
+                key,
+                "[redacted]" if key.lower() in SENSITIVE_QUERY_PARAMETERS else value,
+            )
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
 
 
 def normalize_adzuna_job(job: dict[str, Any], *, country: str) -> JobRecord:
@@ -950,18 +1004,49 @@ def mask_secret(value: str | None, *, head: int = 4, tail: int = 2) -> str | Non
     return f"{value[:head]}{'*' * (len(value) - head - tail)}{value[-tail:]}"
 
 
-def resolve_workspace_path(root: Path, raw_path: str | Path) -> Path:
+def resolve_workspace_path(
+    root: Path,
+    raw_path: str | Path,
+    *,
+    must_stay_inside: bool = False,
+    label: str = "Path",
+) -> Path:
     path = Path(raw_path)
     if path.is_absolute():
-        return path.resolve()
-    return (root / path).resolve()
+        resolved = path.resolve()
+    else:
+        resolved = (root / path).resolve()
+    if must_stay_inside:
+        return require_path_inside(resolved, root, label=label)
+    return resolved
 
 
 def resolve_refresh_input_path(output_root: Path, raw_path: str | Path) -> Path:
     path = Path(raw_path)
     if path.is_absolute():
-        return path.resolve()
-    return (output_root / path).resolve()
+        resolved = path.resolve()
+    else:
+        resolved = (output_root / path).resolve()
+    return require_path_inside(resolved, output_root, label="Job refresh merge input path")
+
+
+def resolve_refresh_output_path(output_root: Path, raw_path: str | Path, *, label: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        resolved = path.resolve()
+    else:
+        resolved = (output_root / path).resolve()
+    return require_path_inside(resolved, output_root, label=label)
+
+
+def require_path_inside(path: Path, root: Path, *, label: str) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise JobSourceError(f"{label} must stay inside {resolved_root}.") from exc
+    return resolved_path
 
 
 def resolve_adzuna_credentials(

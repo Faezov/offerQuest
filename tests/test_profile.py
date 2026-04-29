@@ -4,9 +4,9 @@ import unittest
 
 from offerquest.profile import build_candidate_profile
 
-CV_TEXT = """Bulat Faezov, M.Sc.
+CV_TEXT = """Jordan Lee, M.Sc.
 Sydney, NSW, Australia
-faezov.bulat@gmail.com
+jordan.lee@example.com
 Professional Summary
 Analytical and detail-oriented insights professional with 10+ years of experience across healthcare, research, and technical environments.
 Core Skills
@@ -15,9 +15,9 @@ SQL querying
 Python automation and analytics workflows
 Data validation and quality checking
 Professional Experience
-University of Washington Medicine
-Senior Computer Specialist | 2024
-Fox Chase Cancer Center
+Harbour Health Research Institute
+Senior Reporting Analyst | 2024
+Clinical Research Center
 Scientific Associate | 2023
 Technical Tools
 Python
@@ -34,7 +34,7 @@ I am writing to apply for the position of Senior Metadata and National Data Offi
 I bring more than 10 years of experience working with structured data, analysis, reporting, and process improvement.
 Now that I am based in Sydney, I am especially motivated to contribute my skills in a role that supports the public health system here in New South Wales.
 With best regards,
-Bulat Faezov
+Jordan Lee
 """
 
 GENERAL_CV_TEXT = """JANE A. DOE
@@ -56,9 +56,9 @@ class ProfileTests(unittest.TestCase):
     def test_build_candidate_profile_extracts_core_data(self) -> None:
         profile = build_candidate_profile(CV_TEXT, CL_TEXT)
 
-        self.assertEqual(profile["name"], "Bulat Faezov")
+        self.assertEqual(profile["name"], "Jordan Lee")
         self.assertEqual(profile["location"], "Sydney, NSW, Australia")
-        self.assertEqual(profile["email"], "faezov.bulat@gmail.com")
+        self.assertEqual(profile["email"], "jordan.lee@example.com")
         self.assertEqual(profile["years_experience"], 10)
         self.assertIn("SQL", profile["core_skills"])
         self.assertIn("Python", profile["core_skills"])

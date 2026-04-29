@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from offerquest.ats import ats_check_job_record, build_ats_report
 
-CV_TEXT = """Bulat Faezov
+CV_TEXT = """Jordan Lee
 Sydney, NSW, Australia
-faezov.bulat@gmail.com
+jordan.lee@example.com
 Professional Summary
 Senior data analyst with SQL, Python, reporting, metadata, and healthcare research experience.
 Core Skills
@@ -15,8 +17,8 @@ Python
 Reporting
 Metadata
 Professional Experience
-University of Washington Medicine
-Senior Computer Specialist | 2024
+Harbour Health Research Institute
+Senior Reporting Analyst | 2024
 Built reporting and data quality workflows.
 Education
 Master of Science in Biology
@@ -83,7 +85,10 @@ Apply now.
             "description_text": JOB_TEXT,
         }
 
-        report = ats_check_job_record("data/CV_BF_20260415.doc", job_record)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cv_path = Path(tmpdir) / "candidate-cv.txt"
+            cv_path.write_text(CV_TEXT, encoding="utf-8")
+            report = ats_check_job_record(cv_path, job_record)
 
         self.assertEqual(report["job_id"], "adzuna:123")
         self.assertEqual(report["company"], "NSW Health")

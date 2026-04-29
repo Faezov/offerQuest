@@ -42,7 +42,7 @@ class ExtractorTests(unittest.TestCase):
         lines = [
             "Root Entry",
             "Heading 1",
-            "Bulat Faezov, M.Sc.",
+            "Jordan Lee, M.Sc.",
             "Professional Summary",
             "SQL querying",
             "WordDocument",
@@ -51,7 +51,7 @@ class ExtractorTests(unittest.TestCase):
         self.assertEqual(
             clean_legacy_word_lines(lines),
             [
-                "Bulat Faezov, M.Sc.",
+                "Jordan Lee, M.Sc.",
                 "Professional Summary",
                 "SQL querying",
             ],

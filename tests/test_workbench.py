@@ -130,6 +130,7 @@ class WorkbenchTests(unittest.TestCase):
             detail = build_run_detail_view(state, manifest["id"])
 
         self.assertIsNotNone(detail)
+        assert detail is not None
         self.assertEqual(detail["artifact_count"], 1)
         self.assertTrue(detail["artifacts"][0]["exists"])
         self.assertEqual(detail["artifacts"][0]["filename"], "ats.json")
@@ -152,6 +153,7 @@ class WorkbenchTests(unittest.TestCase):
             preview = build_artifact_preview(state, manifest["id"], 0)
 
         self.assertIsNotNone(preview)
+        assert preview is not None
         self.assertEqual(preview.preview_kind, "text")
         self.assertIn("Dear Hiring Team", preview.content or "")
 
@@ -270,8 +272,10 @@ class WorkbenchTests(unittest.TestCase):
             ],
         ):
             progress_events: list[dict[str, object]] = []
-            def fake_pull_ollama_model(**kwargs):
+
+            def fake_pull_ollama_model(**kwargs: object) -> None:
                 progress_callback = kwargs["progress_callback"]
+                assert callable(progress_callback)
                 progress_callback(
                     {
                         "status": "pulling manifest",
@@ -305,7 +309,7 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual(result.ollama_status["models"][0]["name"], "qwen3:8b")
         self.assertEqual(pull_mock.call_args.kwargs["model"], "qwen3:8b")
         self.assertEqual(pull_mock.call_args.kwargs["base_url"], "http://localhost:11434")
-        self.assertIn("50 B of 100 B", progress_events[1]["detail"])
+        self.assertIn("50 B of 100 B", str(progress_events[1]["detail"]))
         self.assertEqual(progress_events[-1]["progress"], 100)
 
     def test_run_job_source_save_creates_source_and_syncs_merge_inputs(self) -> None:
@@ -990,13 +994,15 @@ class WorkbenchTests(unittest.TestCase):
 
             self.assertTrue(result.output_path.exists())
             self.assertTrue(result.analysis_output_path.exists())
-            self.assertIsNotNone(result.docx_output_path)
-            self.assertTrue(result.docx_output_path.exists())
+            docx_output_path = result.docx_output_path
+            self.assertIsNotNone(docx_output_path)
+            assert docx_output_path is not None
+            self.assertTrue(docx_output_path.exists())
             self.assertEqual(result.run_manifest["workflow"], "tailor-cv-draft")
             self.assertEqual(len(result.run_manifest["artifacts"]), 3)
             self.assertIn("Automation", result.comparison["section_changes"]["skills_after"])
             self.assertIn("Senior Data Analyst", result.output_path.read_text(encoding="utf-8"))
-            self.assertIn("Senior Data Analyst", read_document_text(result.docx_output_path))
+            self.assertIn("Senior Data Analyst", read_document_text(docx_output_path))
 
     def test_run_rerank_jobs_build_writes_output_and_records_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

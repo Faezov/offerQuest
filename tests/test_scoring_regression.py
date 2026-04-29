@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 from offerquest.scoring import score_job_text
 
@@ -17,7 +18,7 @@ PROFILE = {
     },
 }
 
-GOOD_FIT_CASES = [
+GOOD_FIT_CASES: list[dict[str, Any]] = [
     {
         "name": "metadata health role",
         "job_text": (
@@ -39,7 +40,7 @@ GOOD_FIT_CASES = [
     },
 ]
 
-BAD_FIT_CASES = [
+BAD_FIT_CASES: list[dict[str, Any]] = [
     {
         "name": "biologist should not look like BI",
         "job_text": (

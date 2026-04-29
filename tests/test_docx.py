@@ -11,18 +11,18 @@ from offerquest.extractors import read_document_text
 class DocxTests(unittest.TestCase):
     def test_clean_export_lines_removes_known_noise(self) -> None:
         lines = [
-            "Faezov, Bulat",
-            "Bulat Faezov, M.Sc.",
+            "Lee, Jordan",
+            "Jordan Lee, M.Sc.",
             "Professional Summary",
             "Normal.dotm",
-            "Bulat Faezov Curriculum vitae",
-            "Caolan80",
+            "Jordan Lee Curriculum vitae",
+            "Template42",
         ]
 
         self.assertEqual(
             clean_export_lines(lines),
             [
-                "Bulat Faezov, M.Sc.",
+                "Jordan Lee, M.Sc.",
                 "Professional Summary",
             ],
         )
@@ -32,7 +32,7 @@ class DocxTests(unittest.TestCase):
             input_path = Path(tmpdir) / "resume.txt"
             output_path = Path(tmpdir) / "resume.docx"
             input_path.write_text(
-                "Bulat Faezov\nProfessional Summary\nSQL and Python\n",
+                "Jordan Lee\nProfessional Summary\nSQL and Python\n",
                 encoding="utf-8",
             )
 
@@ -40,7 +40,7 @@ class DocxTests(unittest.TestCase):
 
             extracted = read_document_text(output_path)
 
-        self.assertIn("Bulat Faezov", extracted)
+        self.assertIn("Jordan Lee", extracted)
         self.assertIn("Professional Summary", extracted)
         self.assertIn("SQL and Python", extracted)
 

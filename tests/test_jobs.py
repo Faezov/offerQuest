@@ -22,6 +22,7 @@ from offerquest.jobs import (
     normalize_adzuna_job,
     normalize_greenhouse_job,
     read_job_records,
+    redact_url_for_logs,
     refresh_job_sources,
     resolve_adzuna_credentials,
     write_adzuna_credentials_file,
@@ -204,10 +205,21 @@ class JobsTests(unittest.TestCase):
         self.assertEqual(fetch_json_mock.call_count, 1)
 
     def test_fetch_json_wraps_failures_in_job_source_error(self) -> None:
+        url = "https://example.com/jobs?app_id=public&app_key=super-secret"
+
         with patch("offerquest.jobs.urlopen", side_effect=OSError("network down")):
-            with patch("offerquest.jobs.logger.warning"):
-                with self.assertRaises(JobSourceError):
-                    fetch_json("https://example.com/jobs", retries=1)
+            with patch("offerquest.jobs.logger.warning") as warning_mock:
+                with self.assertRaises(JobSourceError) as context:
+                    fetch_json(url, retries=1)
+
+        warning_text = " ".join(
+            str(argument)
+            for call in warning_mock.call_args_list
+            for argument in call.args
+        )
+        self.assertNotIn("super-secret", str(context.exception))
+        self.assertNotIn("super-secret", warning_text)
+        self.assertIn("app_key=%5Bredacted%5D", redact_url_for_logs(url))
 
     def test_fetch_adzuna_job_pages_merges_pages_and_adds_query_metadata(self) -> None:
         payloads = [
@@ -462,6 +474,96 @@ class JobsTests(unittest.TestCase):
             self.assertEqual(
                 persisted_summary["summary_output"], "outputs/jobs/refresh-summary.json"
             )
+
+    def test_refresh_job_sources_rejects_outputs_outside_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "workspace"
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir(parents=True)
+            (jobs_dir / "manual-role.txt").write_text(
+                "Senior Reporting Analyst\nSQL and reporting\n",
+                encoding="utf-8",
+            )
+            config_path = root / "jobs-sources.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {
+                                "name": "manual",
+                                "type": "manual",
+                                "input_path": "jobs",
+                                "output": "manual.jsonl",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(JobSourceError):
+                refresh_job_sources(
+                    config_path,
+                    workspace_root=root,
+                    output_dir=root.parent / "outside",
+                )
+
+    def test_refresh_job_sources_rejects_traversing_output_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            jobs_dir = root / "jobs"
+            jobs_dir.mkdir()
+            (jobs_dir / "manual-role.txt").write_text(
+                "Senior Reporting Analyst\nSQL and reporting\n",
+                encoding="utf-8",
+            )
+
+            cases = [
+                {
+                    "sources": [
+                        {
+                            "name": "manual",
+                            "type": "manual",
+                            "input_path": "jobs",
+                            "output": "../manual.jsonl",
+                        }
+                    ]
+                },
+                {
+                    "sources": [
+                        {
+                            "name": "manual",
+                            "type": "manual",
+                            "input_path": "jobs",
+                            "output": "manual.jsonl",
+                        }
+                    ],
+                    "merge": {
+                        "enabled": True,
+                        "inputs": ["manual.jsonl"],
+                        "output": "../all.jsonl",
+                    },
+                },
+                {
+                    "sources": [
+                        {
+                            "name": "manual",
+                            "type": "manual",
+                            "input_path": "jobs",
+                            "output": "manual.jsonl",
+                        }
+                    ],
+                    "summary_output": "../refresh-summary.json",
+                },
+            ]
+
+            for index, config in enumerate(cases):
+                with self.subTest(index=index):
+                    config_path = root / f"jobs-sources-{index}.json"
+                    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+                    with self.assertRaises(JobSourceError):
+                        refresh_job_sources(config_path, workspace_root=root)
 
 
 if __name__ == "__main__":

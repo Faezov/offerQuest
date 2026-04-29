@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 from unittest.mock import patch
 
 from offerquest.ollama import (
@@ -103,9 +104,13 @@ class OllamaTests(unittest.TestCase):
                 "content": '{"resume_headline":"Senior Data Analyst","cover_letter_text":"Hello","employer_specific_focus":[],"evidence_used":[],"caution_flags":[]}'
             }
         }
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
-        def fake_post_json_stream(url, payload, **kwargs):
+        def fake_post_json_stream(
+            url: str,
+            payload: dict[str, Any],
+            **kwargs: Any,
+        ) -> list[dict[str, Any]]:
             captured["url"] = url
             captured["payload"] = payload
             captured["kwargs"] = kwargs

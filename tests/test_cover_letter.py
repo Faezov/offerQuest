@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from offerquest.cover_letter import (
     build_cover_letter_text,
@@ -14,6 +15,40 @@ from offerquest.cover_letter import (
     write_cover_letter,
 )
 from offerquest.errors import ProfileValidationError
+
+CANDIDATE_CV_TEXT = """Jordan Lee
+Sydney, NSW, Australia
+jordan.lee@example.com
+Professional Summary
+Senior data analyst with 10+ years of experience across healthcare, research, reporting, and technical environments.
+Core Skills
+SQL querying
+Python automation and analytics workflows
+Reporting
+Metadata
+Data validation and quality checking
+Professional Experience
+Harbour Health Research Institute
+Senior Reporting Analyst | 2024
+Built reporting and data quality workflows.
+Education
+Master of Science in Biology
+"""
+
+BASE_COVER_LETTER_TEXT = """Dear Hiring Panel,
+I am writing to apply for the position of Senior Data Analyst.
+I bring more than 10 years of experience working with structured data, analysis, reporting, and process improvement.
+With best regards,
+Jordan Lee
+"""
+
+
+def write_candidate_inputs(root: Path) -> tuple[Path, Path]:
+    cv_path = root / "candidate-cv.txt"
+    cover_letter_path = root / "base-cover-letter.txt"
+    cv_path.write_text(CANDIDATE_CV_TEXT, encoding="utf-8")
+    cover_letter_path.write_text(BASE_COVER_LETTER_TEXT, encoding="utf-8")
+    return cv_path, cover_letter_path
 
 
 class CoverLetterTests(unittest.TestCase):
@@ -32,11 +67,13 @@ class CoverLetterTests(unittest.TestCase):
             ),
         }
 
-        payload = generate_cover_letter_for_job_record(
-            "data/CV_BF_20260415.docx",
-            job_record,
-            base_cover_letter_path="data/CL_BF_20260415.doc",
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cv_path, cover_letter_path = write_candidate_inputs(Path(tmpdir))
+            payload = generate_cover_letter_for_job_record(
+                cv_path,
+                job_record,
+                base_cover_letter_path=cover_letter_path,
+            )
 
         self.assertEqual(payload["job_title"], "Senior Data Analyst")
         self.assertEqual(payload["company"], "Mane Consulting")
@@ -109,6 +146,7 @@ class CoverLetterTests(unittest.TestCase):
         ]
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            cv_path, cover_letter_path = write_candidate_inputs(Path(tmpdir))
             ranking_path = Path(tmpdir) / "ranking.json"
             ranking_path.write_text(json.dumps(ranking_payload), encoding="utf-8")
 
@@ -120,11 +158,11 @@ class CoverLetterTests(unittest.TestCase):
 
             output_dir = Path(tmpdir) / "letters"
             summary = generate_cover_letters_from_ranking(
-                "data/CV_BF_20260415.docx",
+                cv_path,
                 jobs_path,
                 ranking_path,
                 output_dir,
-                base_cover_letter_path="data/CL_BF_20260415.doc",
+                base_cover_letter_path=cover_letter_path,
                 top_n=5,
                 export_docx=True,
             )
@@ -155,22 +193,24 @@ class CoverLetterTests(unittest.TestCase):
             ),
         }
 
-        with unittest.mock.patch(
+        with mock.patch(
             "offerquest.cover_letter.generate_structured_response",
             return_value={
                 "resume_headline": "Senior Data Analyst",
                 "employer_specific_focus": ["Consulting environment", "Reporting reliability"],
                 "evidence_used": ["Python and SQL automation", "Healthcare and research reporting"],
                 "caution_flags": [],
-                "cover_letter_text": "Dear Hiring Team,\n\nExample.\n\nWith best regards,\nBulat Faezov",
+                "cover_letter_text": "Dear Hiring Team,\n\nExample.\n\nWith best regards,\nJordan Lee",
             },
         ):
-            payload = generate_cover_letter_for_job_record_llm(
-                "data/CV_BF_20260415.docx",
-                job_record,
-                base_cover_letter_path="data/CL_BF_20260415.doc",
-                model="qwen3:8b",
-            )
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cv_path, cover_letter_path = write_candidate_inputs(Path(tmpdir))
+                payload = generate_cover_letter_for_job_record_llm(
+                    cv_path,
+                    job_record,
+                    base_cover_letter_path=cover_letter_path,
+                    model="qwen3:8b",
+                )
 
         self.assertEqual(payload["llm_provider"], "ollama")
         self.assertEqual(payload["llm_model"], "qwen3:8b")
@@ -212,7 +252,7 @@ class CoverLetterTests(unittest.TestCase):
         )
 
         self.assertIn("Jane Doe", text)
-        self.assertNotIn("Bulat Faezov", text)
+        self.assertNotIn("Jordan Lee", text)
         self.assertNotIn("Sydney, NSW, Australia", text)
 
     def test_select_top_unique_rankings_keeps_same_title_different_locations(self) -> None:

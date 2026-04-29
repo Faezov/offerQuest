@@ -6,6 +6,7 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 from urllib.parse import urlencode
 
@@ -39,7 +40,7 @@ class _ASGIResponse:
 
 
 async def _send_asgi_request(
-    app: object,
+    app: Any,
     method: str,
     path: str,
     *,
@@ -47,10 +48,10 @@ async def _send_asgi_request(
 ) -> _ASGIResponse:
     body = urlencode(data).encode("utf-8") if data else b""
     raw_path, _, query = path.partition("?")
-    messages: list[dict[str, object]] = []
+    messages: list[dict[str, Any]] = []
     request_sent = False
 
-    async def receive() -> dict[str, object]:
+    async def receive() -> dict[str, Any]:
         nonlocal request_sent
         if not request_sent:
             request_sent = True
@@ -61,7 +62,7 @@ async def _send_asgi_request(
             }
         return {"type": "http.disconnect"}
 
-    async def send(message: dict[str, object]) -> None:
+    async def send(message: dict[str, Any]) -> None:
         messages.append(message)
 
     headers = [(b"host", b"testserver")]
@@ -88,7 +89,7 @@ async def _send_asgi_request(
         "root_path": "",
     }
 
-    await app(scope, receive, send)  # type: ignore[misc]
+    await app(scope, receive, send)
 
     status_code = 500
     response_headers: dict[str, str] = {}
@@ -123,7 +124,7 @@ class _TestClient:
 
 
 testclient_module = ModuleType("fastapi.testclient")
-testclient_module.TestClient = _TestClient
+setattr(testclient_module, "TestClient", _TestClient)
 sys.modules["fastapi.testclient"] = testclient_module
 
 
@@ -327,6 +328,7 @@ class WebAppTests(unittest.TestCase):
         job = store.get(job_id)
 
         self.assertIsNotNone(job)
+        assert job is not None
         self.assertEqual(job["status"], "running")
         self.assertEqual(job["progress"], 47)
         self.assertEqual(job["message"], "Downloading")

@@ -24,17 +24,6 @@ from .documents import (
     run_resume_tailored_draft_build,
     run_resume_tailoring_plan_build,
 )
-from .jobs import (
-    BuildRerankJobsResult,
-    build_latest_rankings_view,
-    build_rerank_jobs_form_view,
-    run_rerank_jobs_build,
-)
-from .profile import (
-    BuildProfileResult,
-    build_profile_form_view,
-    run_profile_build,
-)
 from .job_sources import (
     JOB_SOURCE_TYPES,
     BuildRefreshJobsResult,
@@ -47,12 +36,23 @@ from .job_sources import (
     run_job_source_toggle,
     run_refresh_jobs_build,
 )
+from .jobs import (
+    BuildRerankJobsResult,
+    build_latest_rankings_view,
+    build_rerank_jobs_form_view,
+    run_rerank_jobs_build,
+)
 from .ollama_setup import (
     PullOllamaModelsResult,
     build_ollama_setup_view,
     run_local_ollama_runtime_install,
     run_ollama_models_pull,
     run_ollama_server_restart,
+)
+from .profile import (
+    BuildProfileResult,
+    build_profile_form_view,
+    run_profile_build,
 )
 from .runs import (
     ArtifactPreview,

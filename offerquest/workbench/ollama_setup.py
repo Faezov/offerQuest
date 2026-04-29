@@ -15,9 +15,9 @@ from ..ollama import (
     get_ollama_status,
     has_local_ollama_installer,
     has_local_ollama_runtime,
-    install_local_ollama_runtime as run_local_ollama_runtime_install,
+    install_local_ollama_runtime,
     pull_ollama_model,
-    restart_managed_ollama_server as run_ollama_server_restart,
+    restart_managed_ollama_server,
 )
 from ..workspace import ProjectState
 
@@ -160,6 +160,20 @@ def run_ollama_models_pull(
         base_url=base_url,
         ollama_status=refreshed_status,
     )
+
+
+def run_local_ollama_runtime_install(
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    return install_local_ollama_runtime(progress_callback=progress_callback)
+
+
+def run_ollama_server_restart(
+    *,
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+) -> dict[str, Any]:
+    return restart_managed_ollama_server(base_url=base_url)
 
 
 def build_model_pull_progress_callback(

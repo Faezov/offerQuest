@@ -35,7 +35,6 @@ DOCX_DOCUMENT_TEMPLATE = """<?xml version="1.0" encoding="UTF-8" standalone="yes
 
 EXPORT_NOISE_LINES = {
     "Normal.dotm",
-    "Caolan80",
 }
 
 
